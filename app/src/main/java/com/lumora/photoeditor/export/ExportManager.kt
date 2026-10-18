@@ -103,8 +103,13 @@ class ExportManager(private val context: Context) {
                 // UUID suffix: batch export encodes several photos back-to-back,
                 // so a millisecond-clock name could collide and corrupt output.
                 val tmp = File(context.cacheDir, "export_${UUID.randomUUID()}.${job.settings.extension()}")
-                encode(bitmap, job.settings, tmp)
-                bitmap.recycle()
+                try {
+                    encode(bitmap, job.settings, tmp)
+                } finally {
+                    // encode() can throw (compress failure, OOM, IO error):
+                    // the full-res bitmap must not leak on the failure path.
+                    bitmap.recycle()
+                }
                 if (cancelled.get()) return@withContext Result.failure(CancellationException())
 
                 onProgress(0.90f)
