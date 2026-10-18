@@ -1,11 +1,13 @@
 package com.lumora.photoeditor
 
 import com.lumora.photoeditor.engine.RetouchEngine
+import com.lumora.photoeditor.engine.InpaintingCore
 import com.lumora.photoeditor.engine.RetouchOp
 import com.lumora.photoeditor.engine.RetouchSpot
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -25,6 +27,22 @@ class CloneToneMatchTest {
             (g.coerceIn(0, 255) shl 8) or b.coerceIn(0, 255)
 
     private fun chan(px: Int, shift: Int) = (px shr shift) and 0xFF
+
+    /** Bilinear sample of one packed channel (test-side reference). */
+    private fun bilinear(
+        px: IntArray, w: Int, h: Int, fx: Double, fy: Double, shift: Int,
+    ): Double {
+        val x0 = fx.toInt().coerceIn(0, w - 1)
+        val y0 = fy.toInt().coerceIn(0, h - 1)
+        val x1 = (x0 + 1).coerceIn(0, w - 1)
+        val y1 = (y0 + 1).coerceIn(0, h - 1)
+        val tx = (fx - x0).coerceIn(0.0, 1.0)
+        val ty = (fy - y0).coerceIn(0.0, 1.0)
+        fun v(x: Int, y: Int) = ((px[y * w + x] shr shift) and 0xFF).toDouble()
+        val top = v(x0, y0) * (1 - tx) + v(x1, y0) * tx
+        val bot = v(x0, y1) * (1 - tx) + v(x1, y1) * tx
+        return top * (1 - ty) + bot * ty
+    }
 
     /** Clone from UV (0.25, 0.5) to (0.75, 0.5) on a 200x100 image. */
     private fun cloneSpot(
@@ -85,6 +103,55 @@ class CloneToneMatchTest {
         assertTrue("mean=$mean, expected ~180", abs(mean - 180) < 14)
         // ...while the checkerboard amplitude survives (not blurred flat).
         assertTrue("std=$std, expected ~40", abs(std - 40) < 12)
+    }
+
+    @Test
+    fun cloneToneReferenceCoRegisteredWithTexture() {
+        // The Clone stamp's texture is bilinearly sampled at the exact
+        // fractional source coordinate (x+dx, y+dy); its tone correction
+        // smooth(dest) − smooth(src) must be evaluated at that SAME point.
+        // Sampling the tone field at the floored pixel (the old integer
+        // index) shifted the correction by up to a pixel relative to the
+        // stamped texture — a faint tone fringe wherever the source patch
+        // crossed a hard edge.
+        val w = 200; val h = 100
+        // Source half (x < 100): sharp step edge at x = 62 (60 -> 200).
+        // Dest half (x >= 100): flat 160.
+        val img = IntArray(w * h) { i ->
+            val x = i % w
+            val v = if (x < 100) { if (x < 62) 60 else 200 } else 160
+            argb(v, v, v)
+        }
+        // Clone from (60.3, 50) to (140, 50): dx = -79.7, fractional 0.7.
+        val spot = RetouchSpot(
+            op = RetouchOp.CLONE,
+            x = 0.7f, y = 0.5f,
+            srcX = 0.3015f, srcY = 0.5f,
+            size = 0.12f, feather = 0.5f, strength = 1f,
+        )
+        val overlay = RetouchEngine.compositeSpots(listOf(spot), w, h, img)
+        // Probe dest pixel (142, 50): disc interior (falloff == 1); its
+        // source sample lands on the blur transition of the source step
+        // edge, where floored vs bilinear tone sampling differ most
+        // (~3 levels — the old code fails this assertion).
+        val px = 142; val py = 50
+        val o = overlay[py * w + px]
+        assertTrue("probe must be fully covered", chan(o, 24) > 250)
+        // Reference tone fields via the real box blur (translation-
+        // invariant: identical to the engine's region blurs at these
+        // interior sample points, both >= blurR inside their regions).
+        val blurR = 6
+        val fullBlur = InpaintingCore.boxBlurRgb(img, w, h, blurR)
+        val dx = 0.3015f * w - 0.7f * w
+        val trueFx = (px + dx).toDouble()
+        val dRef = chan(fullBlur[py * w + px], 16).toDouble()
+        val sRef = bilinear(fullBlur, w, h, trueFx, py.toDouble(), 16)
+        // Texture at the sample point is locally constant 200 (both
+        // bilinear neighbours are 200), so the engine's texture sample is
+        // exactly 200 regardless of bilinear rounding details.
+        val expected = (200.0 + (dRef - sRef)).roundToInt().coerceIn(0, 255)
+        val actual = chan(o, 16)
+        assertTrue("actual=$actual expected=$expected", abs(actual - expected) <= 2)
     }
 
     @Test

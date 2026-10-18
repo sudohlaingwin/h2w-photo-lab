@@ -285,10 +285,20 @@ object RetouchEngine {
                     var r = ((px shr 16) and 0xFF).toFloat()
                     var g = ((px shr 8) and 0xFF).toFloat()
                     var b = (px and 0xFF).toFloat()
-                    val di = (y - dReg.y0) * dReg.w + (x - dReg.x0)
-                    val si = ((y + dy).toInt() - sReg.y0) * sReg.w +
-                        ((x + dx).toInt() - sReg.x0)
-                    val dPx = dBlur[di]; val sPx = sBlur[si]
+                    val dPx = dBlur[(y - dReg.y0) * dReg.w + (x - dReg.x0)]
+                    // The tone reference must be co-registered with the
+                    // texture sample: the stamp's texture comes from
+                    // bilinear(x+dx, y+dy), so its tone correction is
+                    // smooth(src) at that SAME fractional point. The old
+                    // integer index sampled the floored pixel — up to a
+                    // pixel away from the stamped texture — leaving a faint
+                    // tone fringe wherever the source patch crossed a hard
+                    // edge. (Pinned by
+                    // CloneToneMatchTest.cloneToneReferenceCoRegisteredWithTexture;
+                    // sampleBilinear clamps, and the sample point always sits
+                    // >= blurR inside the padded source region.)
+                    val sPx = sampleBilinear(
+                        sBlur, sReg.w, sReg.h, x + dx - sReg.x0, y + dy - sReg.y0)
                     r += ((dPx shr 16) and 0xFF) - ((sPx shr 16) and 0xFF)
                     g += ((dPx shr 8) and 0xFF) - ((sPx shr 8) and 0xFF)
                     b += (dPx and 0xFF) - (sPx and 0xFF)
