@@ -1969,11 +1969,19 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                 checkBlackFrame(bmp, frame, effState)
             }
 
-            // throttled histogram readback
+            // throttled histogram readback: auxiliary sampling must never
+            // take down the main render — a failure here (GL readback hiccup,
+            // sampling bug) logs and continues instead of tripping the
+            // GL-error fallback for the whole preview (watchdog philosophy:
+            // diagnostics must never break rendering).
             val now = System.currentTimeMillis()
             if (now - lastHistMs > 450) {
                 lastHistMs = now
-                readHistogram()
+                try {
+                    readHistogram()
+                } catch (t: Throwable) {
+                    android.util.Log.w("EditorGlView", "histogram readback failed", t)
+                }
             }
         }
 
