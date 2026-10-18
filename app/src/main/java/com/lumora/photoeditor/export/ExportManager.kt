@@ -370,9 +370,20 @@ class ExportManager(private val context: Context) {
         val longNow = max(oriented.width, oriented.height)
         val final = if (longNow > targetLong) {
             val sc = targetLong.toFloat() / longNow
-            Bitmap.createScaledBitmap(oriented,
-                (oriented.width * sc).toInt(), (oriented.height * sc).toInt(), true)
-                .also { oriented.recycle() }
+            // A degenerate 1px-wide strip could scale to 0px, which
+            // createScaledBitmap rejects with IllegalArgumentException.
+            val dstW = (oriented.width * sc).toInt().coerceAtLeast(1)
+            val dstH = (oriented.height * sc).toInt().coerceAtLeast(1)
+            try {
+                Bitmap.createScaledBitmap(oriented, dstW, dstH, true)
+            } catch (t: Throwable) {
+                // createScaledBitmap allocates before returning: on a
+                // throw (notably OOM on very large sources) the oriented
+                // decode must not leak native memory, or the retry has
+                // even less headroom than the failed attempt.
+                runCatching { if (!oriented.isRecycled) oriented.recycle() }
+                throw t
+            }.also { if (!oriented.isRecycled) oriented.recycle() }
         } else oriented
         return Decoded(final, orient)
     }

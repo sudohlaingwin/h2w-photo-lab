@@ -110,8 +110,16 @@ private suspend fun exportOne(
                 state.masks.filter { it.enabled }.take(GlEngine.MAX_MASKS)
                     .map { m ->
                         val base = MaskEngine.rasterize(m, container.aiMasks)
-                        Bitmap.createScaledBitmap(base, 1024, 1024, true)
-                            .also { base.recycle() }
+                        try {
+                            Bitmap.createScaledBitmap(base, 1024, 1024, true)
+                        } catch (t: Throwable) {
+                            // createScaledBitmap allocates before
+                            // returning: on a throw (OOM on a huge mask
+                            // raster) the base must not leak native
+                            // memory across a multi-photo batch.
+                            runCatching { if (!base.isRecycled) base.recycle() }
+                            throw t
+                        }.also { if (!base.isRecycled) base.recycle() }
                     }
             }
         } catch (t: Throwable) {
