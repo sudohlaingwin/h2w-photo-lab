@@ -38,6 +38,14 @@ class ExportManager(private val context: Context) {
 
     companion object {
         private const val TAG = "ExportManager"
+        /**
+         * Upper bound for one GPU render round-trip. The render itself is
+         * tiled and progress-driven, so even a 16000px export finishes far
+         * sooner on a V60-class GPU; this only bounds a dead/stalled GL
+         * host, which previously froze the export UI at partial progress
+         * with no way out.
+         */
+        private const val GL_RENDER_TIMEOUT_MS = 180_000L
     }
 
     data class Job(
@@ -186,7 +194,9 @@ class ExportManager(private val context: Context) {
             )
             tmp.delete()
             uri
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            // Documented "never throws": OOM on a big sheet must also come
+            // back as null, not a crash.
             null
         }
     }
@@ -256,9 +266,26 @@ class ExportManager(private val context: Context) {
                 } catch (t: Throwable) {
                     if (t is CancellationException) throw t
                     rendered.completeExceptionally(t)
+                } finally {
+                    // RetouchEngine.rasterize hands us a fresh full-res
+                    // bitmap; its pixels are in the GL texture now, so
+                    // release the native memory before/after the (slow,
+                    // tiled) render instead of waiting for GC. The
+                    // caller's previewRetouch is untouched — it is
+                    // re-uploaded above and stays owned by the caller.
+                    runCatching { exportRetouch?.recycle() }
                 }
             }
-            val bitmap = rendered.await()
+            val bitmap = try {
+                withTimeout(GL_RENDER_TIMEOUT_MS) { rendered.await() }
+            } catch (t: TimeoutCancellationException) {
+                // Genuine coroutine cancellation arrives as
+                // JobCancellationException and still propagates; only the
+                // withTimeout watchdog lands here. Surface it as a
+                // retryable failure, not a hang.
+                throw IllegalStateException(
+                    "The renderer stopped responding — try the export again", t)
+            }
             if (cancelled.get()) {
                 bitmap.recycle()
                 throw CancellationException()
@@ -311,7 +338,14 @@ class ExportManager(private val context: Context) {
                     ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
             }
         } catch (_: Exception) { }
-        val oriented = applyOrientation(bmp, orient)
+        val oriented = try {
+            applyOrientation(bmp, orient)
+        } catch (t: Throwable) {
+            // applyOrientation recycles bmp only on success; on a throw
+            // (bad matrix, OOM inside createBitmap) the source must not leak.
+            runCatching { if (!bmp.isRecycled) bmp.recycle() }
+            throw t
+        }
         // downscale to target long edge if needed
         val longNow = max(oriented.width, oriented.height)
         val final = if (longNow > targetLong) {
@@ -350,7 +384,7 @@ class ExportManager(private val context: Context) {
 
     private fun encode(bitmap: Bitmap, s: ExportSettings, dst: File) {
         FileOutputStream(dst).use { out ->
-            when (s.format) {
+            val ok = when (s.format) {
                 ExportFormat.JPEG -> bitmap.compress(Bitmap.CompressFormat.JPEG, s.quality, out)
                 ExportFormat.PNG -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                 ExportFormat.WEBP -> {
@@ -360,6 +394,10 @@ class ExportManager(private val context: Context) {
                         bitmap.compress(Bitmap.CompressFormat.WEBP, s.quality, out)
                 }
             }
+            // A failed compress leaves a 0-byte file behind — surface it as
+            // an error rather than inserting a corrupt image into the
+            // user's gallery.
+            if (!ok) throw IllegalStateException("Could not encode the image (${s.format})")
         }
     }
 

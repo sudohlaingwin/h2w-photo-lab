@@ -2431,30 +2431,43 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
             }
-            val result = container.exports.export(
-                ExportManager.Job(
-                    sourceUri = uri,
-                    state = _state.value,
-                    settings = settings,
-                    previewBitmap = preview,
-                    previewMasks = currentMaskBitmaps(),
-                    previewDecon = currentDeconBitmaps(),
-                    previewRetouch = retouchCache?.second,
-                    exportMasks = exportMasks,
-                    exportDecon = exportDecon,
-                    retouchSpots = _state.value.retouch.spots,
-                    glEngine = glEngineRef ?: return@launch run {
-                        _exportUi.value = ExportUiState.Error("Renderer not ready")
-                    },
-                    glHost = glHost,
-                )
-            ) { p -> _exportUi.value = ExportUiState.Running(p) }
-            result
-                .onSuccess { _exportUi.value = ExportUiState.Done(it, settings) }
-                .onFailure {
-                    _exportUi.value = ExportUiState.Error(
-                        it.message ?: "Export failed")
+            try {
+                val result = container.exports.export(
+                    ExportManager.Job(
+                        sourceUri = uri,
+                        state = _state.value,
+                        settings = settings,
+                        previewBitmap = preview,
+                        previewMasks = currentMaskBitmaps(),
+                        previewDecon = currentDeconBitmaps(),
+                        previewRetouch = retouchCache?.second,
+                        exportMasks = exportMasks,
+                        exportDecon = exportDecon,
+                        retouchSpots = _state.value.retouch.spots,
+                        glEngine = glEngineRef ?: return@launch run {
+                            _exportUi.value = ExportUiState.Error("Renderer not ready")
+                        },
+                        glHost = glHost,
+                    )
+                ) { p -> _exportUi.value = ExportUiState.Running(p) }
+                result
+                    .onSuccess { _exportUi.value = ExportUiState.Done(it, settings) }
+                    .onFailure {
+                        _exportUi.value = ExportUiState.Error(
+                            it.message ?: "Export failed")
+                    }
+            } finally {
+                // The export-resolution masks are job-local scratch (fresh
+                // 1024px copies; the cache bitmaps they were scaled from are
+                // untouched). The engine re-uploaded the preview assets
+                // inside the GL task, so release the native memory now
+                // instead of waiting for GC — batch export does the same
+                // per photo. Decon bitmaps are NOT recycled: rebuilt ones
+                // were stored into deconCache above and stay live.
+                exportMasks.forEach {
+                    runCatching { if (!it.isRecycled) it.recycle() }
                 }
+            }
         }
     }
 
