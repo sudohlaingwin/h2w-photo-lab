@@ -120,14 +120,20 @@ fun MaskPanel(
         // adjustments.
         var autoMaskWorking by remember { mutableStateOf(false) }
         var autoMaskResult by remember { mutableStateOf<String?>(null) }
+        /** True when the last Auto Mask run found nothing — the result row
+         *  then offers a one-tap "Paint a mask" recovery instead of a
+         *  dead-end message. */
+        var autoMaskFoundNothing by remember { mutableStateOf(false) }
         LumoraButton(
             onClick = {
                 autoMaskWorking = true
                 autoMaskResult = null
+                autoMaskFoundNothing = false
                 vm.applyAutoMask { created ->
                     autoMaskWorking = false
                     autoMaskResult = if (created.isEmpty()) {
-                        "No clear subject or sky found — try a manual mask."
+                        autoMaskFoundNothing = true
+                        "No clear subject or sky found."
                     } else {
                         "Created: ${created.joinToString(", ")}"
                     }
@@ -156,12 +162,40 @@ fun MaskPanel(
             }
         }
         autoMaskResult?.let { result ->
-            Text(
-                result,
-                style = Lumora.type.caption,
-                color = Lumora.colors.textTertiary,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-            )
+            if (autoMaskFoundNothing) {
+                // Recovery path, not a dead end: one tap creates a fresh
+                // brush mask and drops straight into paint mode — identical
+                // to picking "Brush" in the add-mask sheet then tapping the
+                // Brush chip, without the detour.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        result,
+                        style = Lumora.type.caption,
+                        color = Lumora.colors.textTertiary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    LumoraTextButton(onClick = {
+                        val maskId = vm.addMask(MaskType.BRUSH,
+                            "Brush ${System.currentTimeMillis() % 1000}")
+                        val compId = vm.addBrushComponent(maskId, false)
+                        onPaintRequest(PaintRequest.Brush(maskId, compId, false))
+                        autoMaskResult = null
+                        autoMaskFoundNothing = false
+                    }) {
+                        Text("Paint a mask", color = Lumora.colors.accent)
+                    }
+                }
+            } else {
+                Text(
+                    result,
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textTertiary,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+            }
         }
 
         // selected mask editor
