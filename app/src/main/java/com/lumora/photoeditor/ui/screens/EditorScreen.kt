@@ -67,6 +67,7 @@ import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -197,6 +198,9 @@ fun EditorScreen(
     var straightenMode by remember { mutableStateOf(false) }
     // guided perspective (two taps define a line that should read vertical or horizontal)
     var perspectiveGuide by remember { mutableStateOf<PerspectiveAxis?>(null) }
+    // true after the guide's first tap lands (the dot is showing) — drives
+    // the two-stage tool hints for straighten/perspective
+    var guideHasFirstPoint by remember { mutableStateOf(false) }
     // lens-blur focus placement: tap/drag on the photo moves the focus point
     var lensFocusPick by remember { mutableStateOf(false) }
     // before/after split view: NDC x of the divider, null = off
@@ -658,15 +662,37 @@ fun EditorScreen(
                             }
                         },
                         onStraighten = { p1, p2 ->
-                            if (applyStraightenGuide(vm, p1, p2)) straightenMode = false
+                            val rotate = applyStraightenGuide(vm, p1, p2)
+                            if (rotate != null) {
+                                straightenMode = false
+                                notice = if (abs(rotate) < 0.05f) {
+                                    "Already level — no change needed"
+                                } else {
+                                    "Leveled by " +
+                                        (if (rotate >= 0f) "+" else "") +
+                                        "%.1f".format(rotate) + "°"
+                                }
+                            } else {
+                                notice = "Points too close together — tap two distinct points"
+                            }
+                            rotate != null
                         },
                         onPerspective = { p1, p2 ->
-                            if (perspectiveGuide == PerspectiveAxis.Horizontal) {
-                                if (vm.applyPerspectiveGuideH(p1, p2)) perspectiveGuide = null
+                            val ok = if (perspectiveGuide == PerspectiveAxis.Horizontal) {
+                                vm.applyPerspectiveGuideH(p1, p2)
                             } else {
-                                if (vm.applyPerspectiveGuide(p1, p2)) perspectiveGuide = null
+                                vm.applyPerspectiveGuide(p1, p2)
                             }
+                            if (ok) {
+                                perspectiveGuide = null
+                                notice = "Perspective corrected"
+                            } else {
+                                notice = "Points too close together — tap two distinct points"
+                            }
+                            ok
                         },
+                        // stage-2 guide hints ("now tap the second point")
+                        onGuideStage = { guideHasFirstPoint = it },
                         onFocusStart = { vm.focusPointStart() },
                         onFocusDrag = { vm.focusPointDrag(it) },
                         onFocusEnd = { vm.focusPointEnd() },
@@ -705,6 +731,7 @@ fun EditorScreen(
                         straightenActive = straightenMode,
                         perspectiveActive = perspectiveGuide != null,
                         perspectiveAxis = perspectiveGuide ?: PerspectiveAxis.Vertical,
+                        guideHasFirstPoint = guideHasFirstPoint,
                         splitActive = splitXNdc != null,
                         focusActive = lensFocusPick,
                         curveTargetActive = curveTargetActive,
@@ -1140,13 +1167,15 @@ private fun updateGradientShape(
  *  is theta + totalRotate (flips cancel out mod 180°, uniform scale preserves
  *  angles), so replacing the total rotation with -theta levels it. Quarter
  *  turns go into rotate90 and the residual into the ±45° slider, so even
- *  near-vertical lines level correctly. Returns false when the two taps
- *  coincide — no line to straighten by — so the caller can keep straighten
- *  mode active for another try. */
-private fun applyStraightenGuide(vm: EditorViewModel, p1: Pt, p2: Pt): Boolean {
+ *  near-vertical lines level correctly. Returns the rotation delta actually
+ *  applied to the photo in degrees (signed; [Geometry.totalRotateDeg]
+ *  before vs after), or null when the two taps coincide — no line to
+ *  straighten by — so the caller can keep straighten mode active for
+ *  another try. */
+private fun applyStraightenGuide(vm: EditorViewModel, p1: Pt, p2: Pt): Float? {
     val dx = p2.x - p1.x
     val dy = p2.y - p1.y
-    if (hypot(dx, dy) < 1e-4f) return false
+    if (hypot(dx, dy) < 1e-4f) return null
     // Line angle in y-down UV space; the line is undirected, so fold to
     // (-90, 90] (drawing direction must not matter).
     var theta = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
@@ -1155,8 +1184,12 @@ private fun applyStraightenGuide(vm: EditorViewModel, p1: Pt, p2: Pt): Boolean {
     // near-vertical lines (which the ±45° slider alone can't level) work.
     val k = (-theta / 90f).roundToInt()
     val rotate = (-theta - 90f * k).coerceIn(-45f, 45f)
+    // The notice reports the delta the photo actually moved, not the
+    // computed correction: replacing (not adding) means a pre-rotated photo
+    // can end up unchanged.
+    val before = Geometry.totalRotateDeg(vm.state.value.geometry)
     vm.update("Straighten") { s -> s.copy(geometry = s.geometry.copy(rotate = rotate, rotate90 = k)) }
-    return true
+    return (rotate + 90f * k) - before
 }
 
 @Composable
@@ -1177,6 +1210,9 @@ private fun ActiveToolChip(
     straightenActive: Boolean = false,
     perspectiveActive: Boolean = false,
     perspectiveAxis: PerspectiveAxis = PerspectiveAxis.Vertical,
+    /** True after the guide's first tap lands (the dot is showing) — the
+     *  hint switches to stage 2 for straighten/perspective. */
+    guideHasFirstPoint: Boolean = false,
     splitActive: Boolean = false,
     focusActive: Boolean = false,
     curveTargetActive: Boolean = false,
@@ -1188,8 +1224,12 @@ private fun ActiveToolChip(
         colorAddSampleActive -> "Tap a color in the photo to add it to the selection"
         colorPickActive -> "Tap a color in the photo to select it"
         hslPickActive -> "Tap a color in the photo to target it"
-        straightenActive -> "Grid shows level — tap two points on a line that should be level"
-        perspectiveActive -> if (perspectiveAxis == PerspectiveAxis.Horizontal)
+        straightenActive -> if (guideHasFirstPoint)
+            "Now tap a second point on the same line — or tap the dot again to start over"
+        else "Grid shows level — tap two points on a line that should be level"
+        perspectiveActive -> if (guideHasFirstPoint)
+            "Now tap a second point on the same line — or tap the dot again to start over"
+        else if (perspectiveAxis == PerspectiveAxis.Horizontal)
             "Tap two points on a line that should be horizontal"
         else "Tap two points on a line that should be vertical"
         splitActive -> "Drag the divider to compare — tap the compare icon to exit"

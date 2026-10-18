@@ -110,11 +110,20 @@ fun EditorGlView(
      *  around the tap point while in [PreviewTouchMode.Pick]. */
     onPickColor: (r: Float, g: Float, b: Float) -> Unit = { _, _, _ -> },
     /** Fired with the two tapped points (source UV) when the user finishes a
-     *  guided-straighten line while in [PreviewTouchMode.Straighten]. */
-    onStraighten: (p1: Pt, p2: Pt) -> Unit = { _, _ -> },
+     *  guided-straighten line while in [PreviewTouchMode.Straighten].
+     *  Returns true when the guide applied; false (degenerate line) makes
+     *  the view clear the half-drawn line so the next attempt starts from
+     *  a clean slate. */
+    onStraighten: (p1: Pt, p2: Pt) -> Boolean = { _, _ -> true },
     /** Fired with the two tapped points (source UV) when the user finishes a
-     *  guided-perspective line while in [PreviewTouchMode.Perspective]. */
-    onPerspective: (p1: Pt, p2: Pt) -> Unit = { _, _ -> },
+     *  guided-perspective line while in [PreviewTouchMode.Perspective].
+     *  Same true/false contract as [onStraighten]. */
+    onPerspective: (p1: Pt, p2: Pt) -> Boolean = { _, _ -> true },
+    /** Fired (on the main thread) with true after the guide's first tap
+     *  lands (the dot is showing) and false when the line completes, is
+     *  cancelled, or the guide mode exits — the host uses it for
+     *  two-stage tool hints. */
+    onGuideStage: (hasFirstPoint: Boolean) -> Unit = {},
     /** Focus gesture callbacks (fired on the main thread) while in
      *  [PreviewTouchMode.FocusPoint]: the user taps/drags to place the
      *  lens-blur focus point on the photo. */
@@ -327,14 +336,25 @@ fun EditorGlView(
                 view.onCropReset = onCropReset
                 view.onPickColor = onPickColor
                 view.onStraighten = onStraighten
-                view.onStraightenOverlay = { straightenPts = it }
+                view.onStraightenOverlay = { pts ->
+                    straightenPts = pts
+                    onGuideStage(pts?.size == 1)
+                }
                 view.onPerspective = onPerspective
-                view.onPerspectiveOverlay = { perspectivePts = it }
+                view.onPerspectiveOverlay = { pts ->
+                    perspectivePts = pts
+                    onGuideStage(pts?.size == 1)
+                }
                 if (touchMode != PreviewTouchMode.Straighten) {
+                    // Exiting mid-draw: the stage-2 hint must not linger.
+                    // Guarded so the parent state only changes on the
+                    // transition (same pattern as the onCropOob reset below).
+                    if (straightenPts != null) onGuideStage(false)
                     straightenPts = null
                     view.straightenP1 = null
                 }
                 if (touchMode != PreviewTouchMode.Perspective) {
+                    if (perspectivePts != null) onGuideStage(false)
                     perspectivePts = null
                     view.perspectiveP1 = null
                 }
@@ -872,13 +892,21 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     private var pickMoved = false
     // lens-blur focus placement state (touch thread only)
     private var focusDragging = false
+    /** UV distance below which a guide's second tap is treated as "tap the
+     *  first dot again to start over" rather than a degenerate line. 2% of
+     *  the image side comfortably covers the dot plus a finger's aim
+     *  error, while real guide lines are far longer. */
+    private val GUIDE_RESTART_EPS_UV = 0.02f
+
     /** State for a guided two-tap line (touch thread only). The straighten
      *  and perspective guides share the exact same tap interaction, so they
      *  each own a slot; the composable addresses the public delegating vars
      *  below to clear a half-finished line when the mode is exited. */
     private class GuideSlot {
         var p1: Pt? = null
-        var onGuide: (p1: Pt, p2: Pt) -> Unit = { _, _ -> }
+        /** Returns true when the guide applied; false clears the half-drawn
+         *  line so the next attempt starts clean (see handleTouch). */
+        var onGuide: (p1: Pt, p2: Pt) -> Boolean = { _, _ -> true }
         var onOverlay: (pts: List<Offset>?) -> Unit = {}
         var downX = 0f
         var downY = 0f
@@ -889,7 +917,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     var straightenP1: Pt?
         get() = straightenSlot.p1
         set(v) { straightenSlot.p1 = v }
-    var onStraighten: (p1: Pt, p2: Pt) -> Unit
+    var onStraighten: (p1: Pt, p2: Pt) -> Boolean
         get() = straightenSlot.onGuide
         set(v) { straightenSlot.onGuide = v }
     var onStraightenOverlay: (pts: List<Offset>?) -> Unit
@@ -898,7 +926,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     var perspectiveP1: Pt?
         get() = perspectiveSlot.p1
         set(v) { perspectiveSlot.p1 = v }
-    var onPerspective: (p1: Pt, p2: Pt) -> Unit
+    var onPerspective: (p1: Pt, p2: Pt) -> Boolean
         get() = perspectiveSlot.onGuide
         set(v) { perspectiveSlot.onGuide = v }
     var onPerspectiveOverlay: (pts: List<Offset>?) -> Unit
@@ -1469,16 +1497,30 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                         if (p1 == null) {
                             guideSlot.p1 = uv
                             reportGuideOverlay(guideSlot, mode)
+                        } else if (hypot(uv.x - p1.x, uv.y - p1.y) < GUIDE_RESTART_EPS_UV) {
+                            // Tapped the first dot again: cancel the
+                            // half-drawn line and start over — the host's
+                            // stage-2 hint advertises this gesture, so it
+                            // must not be treated as a degenerate line.
+                            guideSlot.p1 = null
+                            guideSlot.onOverlay(null)
                         } else {
                             guideSlot.p1 = null
-                            // show the finished line for the frame(s) until
-                            // the editor exits the guide mode
                             val v1 = uvToViewPx(p1); val v2 = uvToViewPx(uv)
-                            if (v1 != null && v2 != null) {
-                                guideSlot.onOverlay(
-                                    listOf(Offset(v1.x, v1.y), Offset(v2.x, v2.y)))
+                            val line = if (v1 != null && v2 != null)
+                                listOf(Offset(v1.x, v1.y), Offset(v2.x, v2.y))
+                            else null
+                            if (guideSlot.onGuide(p1, uv)) {
+                                // show the finished line for the frame(s)
+                                // until the editor exits the guide mode
+                                if (line != null) guideSlot.onOverlay(line)
+                            } else {
+                                // Degenerate or unsolvable line: clear
+                                // everything so the next attempt starts
+                                // from a clean slate (the host explains
+                                // what went wrong via the notice).
+                                guideSlot.onOverlay(null)
                             }
-                            guideSlot.onGuide(p1, uv)
                         }
                     }
                 }
