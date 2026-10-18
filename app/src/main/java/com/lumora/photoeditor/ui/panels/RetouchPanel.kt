@@ -149,21 +149,19 @@ fun RetouchPanel(
                 Text("Remove AI grade")
             }
         }
-        // One-tap auto retouch
+        // Auto Retouch: adaptive one-tap retouch — a true toggle (user
+        // decision 2026-10-17): first tap applies the best result, second
+        // tap reverts to the exact pre-auto state, never stacking.
         var autoRunning by remember { mutableStateOf(false) }
-        var autoResult by remember { mutableStateOf<String?>(null) }
+        var autoOutcome by remember { mutableStateOf<EditorViewModel.AutoRetouchOutcome?>(null) }
+        val autoRetouchApplied by vm.autoRetouchApplied.collectAsState()
         LumoraButton(
             onClick = {
                 autoRunning = true
-                autoResult = null
-                vm.applyAutoRetouch { count, skinFound, underEyes, condition ->
+                autoOutcome = null
+                vm.applyAutoRetouch { outcome ->
                     autoRunning = false
-                    autoResult = buildString {
-                        append("Healed $count blemish${if (count == 1) "" else "es"}")
-                        if (underEyes > 0) append(" + brightened $underEyes under-eye${if (underEyes == 1) "" else "s"}")
-                        if (skinFound) append(" + skin softened")
-                        if (condition.isNotEmpty()) append(" [$condition]")
-                    }
+                    autoOutcome = outcome
                 }
             },
             enabled = !autoRunning,
@@ -184,16 +182,34 @@ fun RetouchPanel(
                 Icon(LumoraIcons.Healing, contentDescription = null,
                     modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Auto Retouch")
+                Text(if (autoRetouchApplied) "Undo Auto Retouch" else "Auto Retouch")
             }
         }
-        autoResult?.let {
-            Text(
-                it,
-                style = Lumora.type.caption,
-                color = Lumora.colors.textSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+        autoOutcome?.let { outcome ->
+            val caption = when (outcome) {
+                is EditorViewModel.AutoRetouchOutcome.Applied -> buildString {
+                    append("Healed ${outcome.blemishCount} blemish${if (outcome.blemishCount == 1) "" else "es"}")
+                    if (outcome.underEyeCount > 0) append(" + brightened ${outcome.underEyeCount} under-eye${if (outcome.underEyeCount == 1) "" else "s"}")
+                    if (outcome.skinFound) append(" + skin softened")
+                    if (outcome.conditionLabel.isNotEmpty()) append(" [${outcome.conditionLabel}]")
+                    append(" — tap Undo Auto Retouch to revert")
+                }
+                is EditorViewModel.AutoRetouchOutcome.Reverted ->
+                    "Auto Retouch off — back to the pre-auto state"
+                is EditorViewModel.AutoRetouchOutcome.Stale ->
+                    "You edited after Auto Retouch — use Undo to go back"
+                is EditorViewModel.AutoRetouchOutcome.NoChange ->
+                    "No blemishes or skin found — nothing changed"
+                is EditorViewModel.AutoRetouchOutcome.Failed -> null
+            }
+            if (caption != null) {
+                Text(
+                    caption,
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
         }
         // ---- Pro Beauty Looks (one-tap, sellable results) ----
         Text(

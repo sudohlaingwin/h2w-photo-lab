@@ -261,9 +261,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     val autoEnhanceApplied: StateFlow<Boolean> = _autoEnhanceApplied.asStateFlow()
     private val _proAutoApplied = MutableStateFlow(false)
     val proAutoApplied: StateFlow<Boolean> = _proAutoApplied.asStateFlow()
+    private val _autoRetouchApplied = MutableStateFlow(false)
+    val autoRetouchApplied: StateFlow<Boolean> = _autoRetouchApplied.asStateFlow()
     /** In-flight auto jobs, so a re-tap cancels the stale analysis first. */
     private var autoEnhanceJob: Job? = null
     private var proAutoJob: Job? = null
+    private var autoRetouchJob: Job? = null
     private var autoDenoiseJob: Job? = null
     /** Guards [applyAutoSkinMask] against double-tap races. */
     private val skinMaskInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -2862,6 +2865,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // revert to: the applied flags die with it.
         _autoEnhanceApplied.value = false
         _proAutoApplied.value = false
+        _autoRetouchApplied.value = false
     }
 
     /**
@@ -3563,13 +3567,50 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * This is adaptive heuristic intelligence, not a trained neural network:
      * it analyzes each photo's actual condition and adjusts its approach.
      */
-    fun applyAutoRetouch(
-        onDone: (blemishCount: Int, skinFound: Boolean, underEyeCount: Int, conditionLabel: String) -> Unit = { _, _, _, _ -> }
-    ) {
+    /** Outcome of one-tap Auto Retouch (true toggle, user decision 2026-10-17). */
+    sealed interface AutoRetouchOutcome {
+        data class Applied(
+            val blemishCount: Int,
+            val skinFound: Boolean,
+            val underEyeCount: Int,
+            val conditionLabel: String,
+        ) : AutoRetouchOutcome
+        data object Reverted : AutoRetouchOutcome
+        data object Stale : AutoRetouchOutcome
+        data object NoChange : AutoRetouchOutcome
+        data object Failed : AutoRetouchOutcome
+    }
+
+    fun applyAutoRetouch(onDone: (AutoRetouchOutcome) -> Unit = {}) {
+        // Toggle-off: restore the pinned pre-auto snapshot — heal and
+        // under-eye spots plus the auto skin mask all live in the
+        // EditState, so one restore reverts everything together. Same
+        // contract as applyAutoEnhance / applyProAuto (user decision
+        // 2026-10-17): first tap applies, second tap reverts to the exact
+        // pre-auto state, never stacking.
+        if (_autoRetouchApplied.value) {
+            val base = autoBaseline
+            _autoRetouchApplied.value = false
+            if (base != null) {
+                update("Auto Retouch off") { _ -> base }
+                onDone(AutoRetouchOutcome.Reverted)
+            } else {
+                onDone(AutoRetouchOutcome.Stale)
+            }
+            return
+        }
         // Private snapshot: the detectors read pixels on Dispatchers.Default
-        // while the UI thread may recycle the live preview bitmap.
-        val bmp = snapshotPreview() ?: run { onDone(0, false, 0, ""); return }
-        guardLaunch(Dispatchers.Default) {
+        // while the UI thread may recycle the live preview bitmap. Was
+        // unguarded: a recycled bitmap here crashed the app outright.
+        val bmp = snapshotPreview() ?: run { onDone(AutoRetouchOutcome.Failed); return }
+        // Capture on the main thread before the background analysis: the
+        // result is applied onto the pre-auto state, so repeated taps
+        // recompute the same result instead of stacking more heal spots and
+        // another skin mask on top (the old behavior).
+        val base = autoBase()
+        autoRetouchJob?.cancel()
+        autoRetouchJob = guardLaunch(Dispatchers.Default) {
+            try {
             // 0. Profile the photo — the "retoucher's assessment" step.
             //    Every later decision adapts to this.
             val profile = try {
@@ -3642,72 +3683,65 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             }
 
             withContext(Dispatchers.Main) {
-                // Add heal spots for blemishes (single undo entry)
-                if (blemishes.isNotEmpty()) {
-                    beginGesture()
-                    for ((i, b) in blemishes.withIndex()) {
-                        // Tone-matched source solved above; fallback steers
-                        // away from the nearest horizontal edge (mirrors the
-                        // manual heal fallback from cycle 14).
-                        val size = b.radius * 2.2f
-                        val solved = blemishSources.getOrNull(i)
-                        val srcX: Float
-                        val srcY: Float
-                        if (solved != null) {
-                            srcX = solved.first
-                            srcY = solved.second
-                        } else {
-                            val dir = if (b.x > 0.75f) -1f else 1f
-                            srcX = (b.x + dir * b.radius * 3f).coerceIn(0f, 1f)
-                            srcY = (b.y - b.radius * 3f).coerceIn(0f, 1f)
-                        }
-                        val spot = RetouchSpot(
-                            op = RetouchOp.HEAL,
-                            x = b.x, y = b.y,
-                            srcX = srcX, srcY = srcY,
-                            size = size,
-                            feather = 0.7f,
-                            strength = recipe.healStrength,
-                        )
-                        update(gesture = true) { s ->
-                            s.copy(retouch = s.retouch.copy(spots = s.retouch.spots + spot))
-                        }
+                // Build the spots as pure data, then apply EVERYTHING onto
+                // the pre-auto baseline in ONE undoable update: heal spots,
+                // under-eye spots and the skin mask together. Applying onto
+                // the baseline (not the live state) is what makes repeated
+                // taps idempotent instead of stacking.
+                val newSpots = ArrayList<RetouchSpot>(blemishes.size + underEyes.size)
+                for ((i, b) in blemishes.withIndex()) {
+                    // Tone-matched source solved above; fallback steers
+                    // away from the nearest horizontal edge (mirrors the
+                    // manual heal fallback from cycle 14).
+                    val size = b.radius * 2.2f
+                    val solved = blemishSources.getOrNull(i)
+                    val srcX: Float
+                    val srcY: Float
+                    if (solved != null) {
+                        srcX = solved.first
+                        srcY = solved.second
+                    } else {
+                        val dir = if (b.x > 0.75f) -1f else 1f
+                        srcX = (b.x + dir * b.radius * 3f).coerceIn(0f, 1f)
+                        srcY = (b.y - b.radius * 3f).coerceIn(0f, 1f)
                     }
-                    // Pro: brighten under-eye dark circles if found
-                    // (strength adapts to photo condition)
-                    for (ue in underEyes) {
-                        val spot = RetouchSpot(
-                            op = RetouchOp.UNDER_EYE,
-                            x = ue.x, y = ue.y,
-                            srcX = ue.x, srcY = ue.y,
-                            size = ue.radius * 2f,
-                            feather = 0.8f,
-                            strength = recipe.underEyeStrength,
-                        )
-                        update(gesture = true) { s ->
-                            s.copy(retouch = s.retouch.copy(spots = s.retouch.spots + spot))
-                        }
-                    }
-                    endGesture("Auto retouch")
+                    newSpots.add(RetouchSpot(
+                        op = RetouchOp.HEAL,
+                        x = b.x, y = b.y,
+                        srcX = srcX, srcY = srcY,
+                        size = size,
+                        feather = 0.7f,
+                        strength = recipe.healStrength,
+                    ))
                 }
-
-                // Add skin-softening mask if skin found
+                // Pro: brighten under-eye dark circles if found
+                // (strength adapts to photo condition)
+                for (ue in underEyes) {
+                    newSpots.add(RetouchSpot(
+                        op = RetouchOp.UNDER_EYE,
+                        x = ue.x, y = ue.y,
+                        srcX = ue.x, srcY = ue.y,
+                        size = ue.radius * 2f,
+                        feather = 0.8f,
+                        strength = recipe.underEyeStrength,
+                    ))
+                }
+                // Skin-softening mask if skin found
+                var skinMaskToAdd: Mask? = null
                 if (skinFound && skinMask != null) {
-                    val maskId = UUID.randomUUID().toString()
-                    val compId = UUID.randomUUID().toString()
                     val aiKey = "skin_${UUID.randomUUID()}"
                     // Save the skin raster to the AI mask store
                     withContext(Dispatchers.IO) {
                         container.aiMasks.save(aiKey, skinMask)
                     }
                     val skinComp = MaskComponent(
-                        id = compId,
+                        id = UUID.randomUUID().toString(),
                         type = MaskType.AI_SKIN,  // dedicated skin-raster type (aiKey lookup)
                         aiKey = aiKey,
                         revision = System.nanoTime(),
                     )
-                    val mask = Mask(
-                        id = maskId,
+                    skinMaskToAdd = Mask(
+                        id = UUID.randomUUID().toString(),
                         name = "Skin soften (auto)",
                         components = listOf(skinComp),
                         adjust = LocalAdjust(
@@ -3716,15 +3750,48 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         ),
                         revision = System.nanoTime(),
                     )
-                    update("Auto skin soften") { s ->
-                        s.copy(masks = s.masks + mask)
-                    }
-                    requestRender()
                 }
 
-                onDone(blemishes.size, skinFound, underEyes.size, conditionLabel)
+                if (newSpots.isEmpty() && skinMaskToAdd == null) {
+                    // Nothing detected: don't touch the state, don't pin —
+                    // a later tap retries fresh.
+                    onDone(AutoRetouchOutcome.NoChange)
+                } else {
+                    val currentAtApply = _state.value
+                    var next = base.copy(
+                        retouch = base.retouch.copy(spots = base.retouch.spots + newSpots),
+                    )
+                    if (skinMaskToAdd != null) {
+                        next = next.copy(masks = next.masks + skinMaskToAdd)
+                    }
+                    // Skip the undo entry + history spam when a re-tap
+                    // recomputes the identical state.
+                    if (next != currentAtApply) {
+                        update("Auto retouch") { _ -> next }
+                    }
+                    // Re-pin the baseline only when the state wasn't touched
+                    // by the user between tap and apply (see Auto Enhance).
+                    if (currentAtApply == base || currentAtApply == next) {
+                        autoBaseline = base
+                        _autoRetouchApplied.value = true
+                    }
+                    requestRender()
+                    onDone(AutoRetouchOutcome.Applied(
+                        blemishCount = blemishes.size,
+                        skinFound = skinFound,
+                        underEyeCount = underEyes.size,
+                        conditionLabel = conditionLabel,
+                    ))
+                }
             }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            android.util.Log.w("EditorVM", "autoRetouch failed", t)
+            withContext(Dispatchers.Main) { onDone(AutoRetouchOutcome.Failed) }
+        } finally {
+            if (!bmp.isRecycled) bmp.recycle()
         }
+    }
     }
 
     /**
