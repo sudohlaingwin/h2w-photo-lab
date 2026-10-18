@@ -83,7 +83,13 @@ sealed interface ExportUiState {
 sealed interface AiUiState {
     data object Idle : AiUiState
     data class Working(val label: String) : AiUiState
-    data class Error(val message: String) : AiUiState
+    /**
+     * @param recoverLabel optional one-tap recovery label (e.g. "Paint a
+     *   mask") shown on the error card; the UI wires it to a manual-mask
+     *   recovery so an AI failure is a detour, never a dead end. Null means
+     *   the card offers Dismiss only, as before.
+     */
+    data class Error(val message: String, val recoverLabel: String? = null) : AiUiState
 }
 
 class EditorViewModel(private val container: AppContainer) : ViewModel() {
@@ -1917,9 +1923,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 _aiUi.value = AiUiState.Idle
             } catch (e: Exception) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
+                // The failure messages already point at manual masks, so back
+                // the card with a one-tap "Paint a mask" recovery instead of
+                // a Dismiss-only dead end (see MaskPanel's Error branch).
                 _aiUi.value = AiUiState.Error(
                     e.message ?: errorHint ?:
-                        "AI segmentation unavailable — use brush or gradient masks instead.")
+                        "AI segmentation unavailable — use brush or gradient masks instead.",
+                    recoverLabel = "Paint a mask")
             }
         }
     }

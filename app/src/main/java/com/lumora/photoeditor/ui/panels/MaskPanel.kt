@@ -276,6 +276,23 @@ fun MaskPanel(
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(ai.message, style = Lumora.type.caption,
                             color = Color(0xFFFFB4B4), modifier = Modifier.weight(1f))
+                        // One-tap recovery: when the ViewModel marks an AI
+                        // failure recoverable (e.g. "No clear subject found"),
+                        // the card offers the same "Paint a mask" shortcut the
+                        // Auto Mask result row has — a fresh brush mask
+                        // dropped straight into paint mode, instead of a
+                        // Dismiss-only dead end.
+                        ai.recoverLabel?.let { label ->
+                            LumoraTextButton(onClick = {
+                                val maskId = vm.addMask(MaskType.BRUSH,
+                                    "Brush ${System.currentTimeMillis() % 1000}")
+                                val compId = vm.addBrushComponent(maskId, false)
+                                onPaintRequest(PaintRequest.Brush(maskId, compId, false))
+                                vm.clearAiError()
+                            }) {
+                                Text(label, color = Lumora.colors.accent)
+                            }
+                        }
                         LumoraTextButton(onClick = vm::clearAiError) {
                             Text("Dismiss", color = Lumora.colors.accent)
                         }
