@@ -271,28 +271,45 @@ object ImageMath {
         val w = 256
         val h = (256f * source.height / source.width).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(source, w, h, true)
-        val px = IntArray(w * h)
-        small.getPixels(px, 0, w, 0, 0, w, h)
-        val out = IntArray(w * h)
-        for (y in 0 until h) for (x in 0 until w) {
-            val i = y * w + x
-            val c = px[i]
-            val r = Color.red(c) / 255f; val g = Color.green(c) / 255f; val b = Color.blue(c) / 255f
-            val mx = max(r, max(g, b)); val mn = min(r, min(g, b))
-            val sat = if (mx > 1e-4f) (mx - mn) / mx else 0f
-            val blueDom = (b - r).coerceIn(0f, 1f)
-            val bright = (mx * 0.6f + (r + g + b) / 3f * 0.4f)
-            val upperBias = 1f - (y / h.toFloat()) * 0.75f
-            var m = (blueDom * 1.6f - sat * 1.2f + (bright - 0.35f) * 1.4f) * upperBias
-            m = m.coerceIn(0f, 1f)
-            // smoothstep the selection for soft edges
-            m = m * m * (3f - 2f * m)
-            out[i] = ((m * 255f).toInt() shl 24)
+        try {
+            val px = IntArray(w * h)
+            small.getPixels(px, 0, w, 0, 0, w, h)
+            val out = IntArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) {
+                val i = y * w + x
+                val c = px[i]
+                val r = Color.red(c) / 255f; val g = Color.green(c) / 255f; val b = Color.blue(c) / 255f
+                val mx = max(r, max(g, b)); val mn = min(r, min(g, b))
+                val sat = if (mx > 1e-4f) (mx - mn) / mx else 0f
+                val blueDom = (b - r).coerceIn(0f, 1f)
+                val bright = (mx * 0.6f + (r + g + b) / 3f * 0.4f)
+                val upperBias = 1f - (y / h.toFloat()) * 0.75f
+                var m = (blueDom * 1.6f - sat * 1.2f + (bright - 0.35f) * 1.4f) * upperBias
+                m = m.coerceIn(0f, 1f)
+                // smoothstep the selection for soft edges
+                m = m * m * (3f - 2f * m)
+                out[i] = ((m * 255f).toInt() shl 24)
+            }
+            val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+            try {
+                val full = Bitmap.createScaledBitmap(m1, source.width, source.height, true)
+                try {
+                    return full.copy(Bitmap.Config.ALPHA_8, false)
+                } finally {
+                    // copy() can throw (OOM on the full-res ALPHA_8 raster);
+                    // never leave the full-res scratch bitmap behind.
+                    if (full !== source) full.recycle()
+                }
+            } finally {
+                m1.recycle()
+            }
+        } finally {
+            // Was leaked on the happy path before: one 256xh ARGB_8888
+            // bitmap per sky-select mask build. The !== guard mirrors
+            // meanLuma: createScaledBitmap may return the source itself
+            // when the sizes already match, and that is caller-owned.
+            if (small !== source) small.recycle()
         }
-        val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        val full = Bitmap.createScaledBitmap(m1, source.width, source.height, true)
-        m1.recycle()
-        return full.copy(Bitmap.Config.ALPHA_8, false).also { full.recycle() }
     }
 
     /**
