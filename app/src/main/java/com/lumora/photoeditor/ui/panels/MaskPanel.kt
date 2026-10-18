@@ -63,6 +63,8 @@ fun MaskPanel(
     onBrushOpacity: (Float) -> Unit,
     brushAutoMask: Boolean,
     onBrushAutoMask: (Boolean) -> Unit,
+    brushAutoMaskTolerance: Float,
+    onBrushAutoMaskTolerance: (Float) -> Unit,
 ) {
     val state by vm.state.collectAsState()
     val selectedId by vm.selectedMaskId.collectAsState()
@@ -214,6 +216,8 @@ fun MaskPanel(
                 brushFlow = brushFlow, onBrushFlow = onBrushFlow,
                 brushOpacity = brushOpacity, onBrushOpacity = onBrushOpacity,
                 brushAutoMask = brushAutoMask, onBrushAutoMask = onBrushAutoMask,
+                brushAutoMaskTolerance = brushAutoMaskTolerance,
+                onBrushAutoMaskTolerance = onBrushAutoMaskTolerance,
             )
         }
 
@@ -507,6 +511,7 @@ private fun MaskEditor(
     brushFlow: Float, onBrushFlow: (Float) -> Unit,
     brushOpacity: Float, onBrushOpacity: (Float) -> Unit,
     brushAutoMask: Boolean, onBrushAutoMask: (Boolean) -> Unit,
+    brushAutoMaskTolerance: Float, onBrushAutoMaskTolerance: (Float) -> Unit,
 ) {
     val colors = Lumora.colors
     val type = Lumora.type
@@ -634,6 +639,15 @@ private fun MaskEditor(
                     onClick = { onBrushAutoMask(!brushAutoMask) },
                     label = { Text(if (brushAutoMask) "Auto-mask ON" else "Auto-mask") },
                 )
+            }
+            if (brushAutoMask) {
+                // Edge tolerance: how far painted pixels may stray in tone
+                // from the brush center before being rejected. Tight hugs
+                // hard edges (hair against sky); loose follows soft
+                // gradients. Percentage pill + double-tap reset come from
+                // LumoraSlider like the other brush controls.
+                SliderRow("Tolerance", brushAutoMaskTolerance, 0.02f..0.5f,
+                    onBrushAutoMaskTolerance, default = 0.14f)
             }
             Text(
                 if (brushAutoMask)

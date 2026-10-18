@@ -134,6 +134,9 @@ fun EditorScreen(
     var brushOpacity by remember { mutableStateOf(1f) }
     // Pro auto-mask: edge-aware brush that respects strong tone boundaries.
     var brushAutoMask by remember { mutableStateOf(false) }
+    // Auto-mask edge tolerance: luminance distance at which a painted pixel
+    // is fully rejected (0.02 = hugs hard edges, 0.5 = follows soft tones).
+    var brushAutoMaskTolerance by remember { mutableStateOf(0.14f) }
     var retouchTool by remember { mutableStateOf<RetouchOp?>(null) }
     // Single-spot erase: tap a retouch spot on the photo to delete just it
     // (mutually exclusive with applying a tool).
@@ -466,6 +469,7 @@ fun EditorScreen(
                                             flow = brushFlow, opacity = brushOpacity,
                                             erase = req.erase,
                                             autoMask = brushAutoMask,
+                                            autoMaskTolerance = brushAutoMaskTolerance,
                                         ))
                                 }
                                 is PaintRequest.Linear -> gradStart = uv
@@ -518,7 +522,8 @@ fun EditorScreen(
                                             BrushPoint(to.x, to.y)),
                                         size = brushSize, feather = brushFeather,
                                         flow = brushFlow, opacity = brushOpacity, erase = req.erase,
-                                        autoMask = brushAutoMask))
+                                        autoMask = brushAutoMask,
+                                        autoMaskTolerance = brushAutoMaskTolerance))
                                 is PaintRequest.Linear -> {
                                     val s = gradStart ?: from
                                     vm.update(gesture = true) { st ->
@@ -900,6 +905,8 @@ fun EditorScreen(
                         brushFlow = brushFlow, onBrushFlow = { brushFlow = it },
                         brushOpacity = brushOpacity, onBrushOpacity = { brushOpacity = it },
                         brushAutoMask = brushAutoMask, onBrushAutoMask = { brushAutoMask = it },
+                        brushAutoMaskTolerance = brushAutoMaskTolerance,
+                        onBrushAutoMaskTolerance = { brushAutoMaskTolerance = it },
                     )
                     Tool.Detail -> DetailPanel(vm)
                     Tool.Optics -> OpticsPanel(vm,
