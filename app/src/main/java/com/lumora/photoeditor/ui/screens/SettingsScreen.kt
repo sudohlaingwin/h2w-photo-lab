@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.lumora.photoeditor.BuildConfig
 import com.lumora.photoeditor.R
 import com.lumora.photoeditor.core.AppContainer
 import com.lumora.photoeditor.ui.components.LumoraButton
@@ -176,6 +177,12 @@ fun SettingsScreen(
             }
             SettingGroup("About") {
                 Text("H2W Photo Lab 1.0.0", style = type.controlLabel, color = colors.textPrimary)
+                // Build fingerprint (P0 recurrence, 2026-10-18): the exact
+                // build on the phone, so a stale pre-fix APK can be told
+                // apart from the current one when diagnosing the black
+                // preview. Baked at build time from the git SHA + date.
+                Text("Build ${BuildConfig.BUILD_DATE} · ${BuildConfig.GIT_SHA}",
+                    style = type.caption, color = colors.textTertiary)
                 Text("Non-destructive photo editor. Originals are never modified; " +
                     "edits live in sidecar files and can be undone any time.",
                     style = type.caption, color = colors.textTertiary)

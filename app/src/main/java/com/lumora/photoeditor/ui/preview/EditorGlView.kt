@@ -258,14 +258,22 @@ fun EditorGlView(
     val glErr = glFailed
     val watchdog = watchdogMsg
     if (glErr != null || watchdog != null) {
+        val bmp = previewBitmap
         // Friendly headline for the user; the raw technical detail stays as
         // a dimmer caption underneath so it can still be diagnosed.
         val headline = if (watchdog != null)
             "Preview watchdog: the GPU frame went black"
         else
             "GPU preview isn't working on this device"
-        val subline = "You're seeing the software preview instead. " +
-            "Your edits are safe and export is unaffected."
+        // When the watchdog tripped on the null-preview path there is no
+        // software bitmap to show — don't claim "you're seeing the software
+        // preview"; say what is true and point at Retry.
+        val subline = if (bmp != null)
+            "You're seeing the software preview instead. " +
+                "Your edits are safe and export is unaffected."
+        else
+            "No preview frame could be produced on this device. " +
+                "Your edits are safe — tap Retry below, or export to check the result."
         val detail = (glErr ?: watchdog)?.take(220)
         Box(
             modifier = modifier
@@ -273,7 +281,6 @@ fun EditorGlView(
                 .background(Lumora.colors.background),
             contentAlignment = Alignment.Center,
         ) {
-            val bmp = previewBitmap
             if (bmp != null) {
                 Image(
                     bitmap = bmp.asImageBitmap(),

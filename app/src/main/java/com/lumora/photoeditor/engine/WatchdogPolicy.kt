@@ -50,6 +50,23 @@ object WatchdogPolicy {
     /** Trips once the caller has seen [TRIP_STREAK] consecutive black frames. */
     fun shouldTrip(streak: Int): Boolean = streak >= TRIP_STREAK
 
+    /**
+     * Null-preview blind-spot gate (P0 recurrence, 2026-10-18): the
+     * watchdog used to silently return when the software preview bitmap
+     * was null, so a photo-open editor whose bitmap never materialized
+     * showed a dead black screen with no watchdog UI and no diagnostic.
+     * The gate only counts when a photo is actually open — the loading
+     * shimmer and the error banner already explain a black screen, so
+     * those states stay silent.
+     */
+    fun nullPreviewSuspicious(photoOpen: Boolean, loading: Boolean, error: Boolean): Boolean =
+        photoOpen && !loading && !error
+
+    /** Diagnostic bundle for the null-preview trip; same log shape as [diagnostic]. */
+    fun nullPreviewDiagnostic(frameMeanLuma: Float): String =
+        "no software preview bitmap for the open photo; " +
+            "GPU frame ${(frameMeanLuma * 100).toInt()}% over $TRIP_STREAK reads"
+
     /** The diagnostic bundle attached to a trip; same shape as the P0 fix logged. */
     fun diagnostic(
         frameMeanLuma: Float,

@@ -1694,6 +1694,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     private var lastOverlayIdx = -1
     private var lastMaskView = 0
     private var blackFrameStreak = 0
+    /** Consecutive black frames while the software preview bitmap is null
+     *  (the blind-spot path above); shares the trip line with [blackFrameStreak]. */
+    private var nullPreviewStreak = 0
     private var lastWatchdogBmp: Bitmap? = null
     /** Mean luma of the source photo; -1 = not measured yet for this bitmap. */
     private var lastSourceLuma = -1f
@@ -1709,7 +1712,39 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     private fun checkPreviewWatchdog(frameMean: Float) {
         if (_previewWatchdog.value != null) return // already tripped; retry clears
-        val bmp = _preview.value ?: run { blackFrameStreak = 0; return }
+        val bmp = _preview.value
+        if (bmp == null) {
+            // Blind-spot close (P0 recurrence, 2026-10-18): this used to
+            // silently reset the streak and return, so a photo-open editor
+            // whose software bitmap never materialized showed a dead black
+            // screen with no watchdog UI and no diagnostic. A loaded photo
+            // with no preview bitmap across consecutive black frames now
+            // trips the watchdog with its own diagnostic — the user gets
+            // the fallback UI and Retry instead of silence. Loading and
+            // error states stay silent: the spinner or the error banner
+            // already explains the screen.
+            if (!WatchdogPolicy.nullPreviewSuspicious(
+                    photoOpen = _libraryImage.value != null,
+                    loading = _loading.value,
+                    error = _error.value != null,
+                )
+            ) {
+                nullPreviewStreak = 0
+                blackFrameStreak = 0
+                return
+            }
+            if (WatchdogPolicy.isBlackFrame(frameMean)) nullPreviewStreak++
+            else nullPreviewStreak = 0
+            blackFrameStreak = 0
+            if (WatchdogPolicy.shouldTrip(nullPreviewStreak)) {
+                val diag = WatchdogPolicy.nullPreviewDiagnostic(frameMean)
+                android.util.Log.e("PreviewWatchdog", "TRIPPED (null preview): $diag")
+                _previewWatchdog.value = diag
+                nullPreviewStreak = 0
+            }
+            return
+        }
+        nullPreviewStreak = 0
         val s = _state.value
         // Trip gates live in WatchdogPolicy (pure, check-51 tested); this
         // method only owns the streak/bitmap state.
@@ -1756,6 +1791,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun retryGpuPreview() {
         _previewWatchdog.value = null
         blackFrameStreak = 0
+        nullPreviewStreak = 0
         lastWatchdogBmp = null
         lastSourceLuma = -1f
         invalidateGpuAssets()

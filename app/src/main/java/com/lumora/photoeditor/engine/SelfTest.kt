@@ -3758,6 +3758,24 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                 expect(d.contains("black frame 0% over 4 reads"), "diag black-frame part: $d")
                 expect(d.contains("source 40%"), "diag source part: $d")
                 expect(d.contains("aiGrade=true@0.75"), "diag AI part: $d")
+                // Null-preview blind-spot gate (P0 recurrence, 2026-10-18):
+                // a photo-open editor with no software preview bitmap and
+                // black frames must count as suspicious — loading and error
+                // states stay silent (the spinner/banner explains them).
+                expect(WatchdogPolicy.nullPreviewSuspicious(true, false, false),
+                    "open photo, no bitmap, black frames must be suspicious")
+                expect(!WatchdogPolicy.nullPreviewSuspicious(false, false, false),
+                    "no open photo must not be suspicious")
+                expect(!WatchdogPolicy.nullPreviewSuspicious(true, true, false),
+                    "loading state must not be suspicious")
+                expect(!WatchdogPolicy.nullPreviewSuspicious(true, false, true),
+                    "error state must not be suspicious")
+                val nd = WatchdogPolicy.nullPreviewDiagnostic(0.005f)
+                expect(nd.contains("no software preview bitmap"), "null-preview diag: $nd")
+                expect(nd.contains("over 4 reads"), "null-preview diag trip line: $nd")
+                // The null-preview streak shares the black-frame trip line.
+                expect(!WatchdogPolicy.shouldTrip(3), "null-preview streak 3 must not trip")
+                expect(WatchdogPolicy.shouldTrip(4), "null-preview streak 4 must trip")
                 (fails.isEmpty()) to (if (fails.isEmpty()) "all watchdog gates hold"
                 else "FAIL: ${fails.joinToString("; ")}")
             }

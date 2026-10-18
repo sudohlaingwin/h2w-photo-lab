@@ -1,9 +1,33 @@
+import java.io.ByteArrayOutputStream
+import java.time.LocalDate
+
 plugins {
     alias(libs.plugins.agp)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+}
+
+// Build fingerprint for Settings → About (P0 recurrence, 2026-10-18): the
+// user must be able to confirm which build is on his phone — a stale
+// pre-fix APK shows the same black preview with no watchdog UI, and the
+// version name alone cannot tell them apart. Baked at configuration time;
+// never fails the build (falls back to "unknown" when git is unavailable).
+val gitSha: String = try {
+    val out = ByteArrayOutputStream()
+    project.exec {
+        commandLine("git", "rev-parse", "--short", "HEAD")
+        standardOutput = out
+    }
+    out.toString().trim().ifEmpty { "unknown" }
+} catch (_: Exception) {
+    "unknown"
+}
+val buildDate: String = try {
+    LocalDate.now().toString()
+} catch (_: Exception) {
+    "unknown"
 }
 
 android {
@@ -22,6 +46,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
+        // Build fingerprint (see top of file): date + short SHA shown in
+        // Settings → About so the build on the phone is identifiable.
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -62,7 +90,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     // JNI smoke module (Phase 0 of the approved RAW program): proves
     // externalNativeBuild + CMake work in this environment. The .so is
