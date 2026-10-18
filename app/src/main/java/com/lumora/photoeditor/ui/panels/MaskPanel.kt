@@ -602,10 +602,15 @@ private fun MaskEditor(
                         "${(brushFeather * 100).toInt()}% feather",
                     style = type.caption, color = colors.textTertiary)
             }
-            SliderRow("Size", brushSize, 0.01f..0.4f, onBrushSize)
-            SliderRow("Feather", brushFeather, 0f..1f, onBrushFeather)
-            SliderRow("Flow", brushFlow, 0.05f..1f, onBrushFlow)
-            SliderRow("Opacity", brushOpacity, 0.05f..1f, onBrushOpacity)
+            // Brush defaults mirror EditorScreen's initial brush state
+            // (0.08f size, 0.5f feather, 0.85f flow, 1f opacity): without them
+            // the value pill rendered accent-tinted as "modified" on first
+            // open and double-tap reset pushed sliders to 0 (a near-invisible
+            // brush) instead of the real defaults.
+            SliderRow("Size", brushSize, 0.01f..0.4f, onBrushSize, default = 0.08f)
+            SliderRow("Feather", brushFeather, 0f..1f, onBrushFeather, default = 0.5f)
+            SliderRow("Flow", brushFlow, 0.05f..1f, onBrushFlow, default = 0.85f)
+            SliderRow("Opacity", brushOpacity, 0.05f..1f, onBrushOpacity, default = 1f)
             // Pro auto-mask: edge-aware brush that hugs tone boundaries.
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                 LumoraChip(
@@ -1102,9 +1107,10 @@ private fun LocalSlider(
 }
 
 @Composable
-private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, default: Float = 0f) {
     com.lumora.photoeditor.ui.components.LumoraSlider(
         label = label, value = value, valueRange = range,
+        default = default,
         onValueChange = onChange, onBegin = {}, onEnd = {},
     )
 }
