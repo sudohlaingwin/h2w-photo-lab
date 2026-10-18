@@ -202,7 +202,9 @@ fun BatchExportScreen(
                     body = "Select photos in the library first.",
                     actionLabel = "Back",
                     onAction = onBack,
-                    icon = LumoraIcons.Error,
+                    // Neutral share glyph, not the error glyph: an empty
+                    // selection is not a failure, so it must not read as one.
+                    icon = LumoraIcons.IosShare,
                 )
                 doneResults != null -> BatchDone(
                     results = doneResults!!,
