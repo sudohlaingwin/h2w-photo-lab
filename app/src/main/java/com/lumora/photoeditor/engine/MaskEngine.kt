@@ -203,22 +203,24 @@ object MaskEngine {
         // Pro auto-mask: sample the luminance under the brush center; pixels
         // whose tone differs strongly are likely across an edge — suppress
         // paint there so the mask hugs the intended region (Lightroom-style).
-        val autoMask = stroke.autoMask && srcLum != null
-        val centerLum = if (autoMask) {
+        // lumArr is a local val so the compiler smart-casts it non-null
+        // inside the loop — no per-pixel !! in the hot path.
+        val lumArr: FloatArray? = if (stroke.autoMask) srcLum else null
+        val centerLum = if (lumArr != null) {
             val ix = cx.toInt().coerceIn(0, w - 1)
             val iy = cy.toInt().coerceIn(0, h - 1)
-            srcLum!![iy * w + ix]
+            lumArr[iy * w + ix]
         } else 0f
         val tol = stroke.autoMaskTolerance.coerceIn(0.02f, 0.5f)
         for (y in y0..y1) for (x in x0..x1) {
             val d = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / radius
             if (d > 1f) continue
             var f = ImageMath.brushFalloff(d, stroke.feather) * flow
-            if (autoMask) {
+            if (lumArr != null) {
                 // Gate by tone similarity: full paint near the center tone,
                 // fading to zero at the tolerance. Uses smoothstep so the
                 // mask edge stays soft, not binary.
-                val dLum = abs(srcLum!![y * w + x] - centerLum)
+                val dLum = abs(lumArr[y * w + x] - centerLum)
                 val t = ((dLum - tol * 0.45f) / (tol * 0.55f)).coerceIn(0f, 1f)
                 val gate = 1f - t * t * (3f - 2f * t) // smoothstep
                 f *= gate
@@ -228,32 +230,6 @@ object MaskEngine {
             acc[idx] = if (stroke.erase) (acc[idx] * (1f - f)).coerceAtLeast(eraseFloor)
             else (1f - (1f - acc[idx]) * (1f - f)).coerceAtMost(cap)
         }
-    }
-
-    /**
-     * Incremental painting for live brush feedback: draws a stamp segment
-     * directly onto a working ALPHA_8 bitmap (0..255 in alpha channel).
-     */
-    fun paintLive(
-        bitmap: Bitmap, fromX: Float, fromY: Float, toX: Float, toY: Float,
-        sizeNorm: Float, feather: Float, flow: Float, opacity: Float, erase: Boolean,
-        autoMask: Boolean = false, srcLum: FloatArray? = null,
-    ) {
-        val w = bitmap.width; val h = bitmap.height
-        val px = IntArray(w * h)
-        bitmap.getPixels(px, 0, w, 0, 0, w, h)
-        val acc = FloatArray(w * h) { i -> ((px[i] ushr 24) and 0xFF) / 255f }
-        val stroke = BrushStroke(
-            points = listOf(BrushPoint(fromX, fromY), BrushPoint(toX, toY)),
-            size = sizeNorm, feather = feather, flow = flow, opacity = opacity, erase = erase,
-            autoMask = autoMask,
-        )
-        // Live preview bitmap may differ in resolution from MAX_RASTER; scale
-        // the source luminance if provided.
-        val lum = if (autoMask && srcLum != null && srcLum.size == w * h) srcLum else null
-        paintStroke(acc, w, h, stroke, lum)
-        for (i in px.indices) px[i] = ((acc[i].coerceIn(0f, 1f) * 255f).toInt() shl 24)
-        bitmap.setPixels(px, 0, w, 0, 0, w, h)
     }
 
     // ------------------------------------------------------------------
