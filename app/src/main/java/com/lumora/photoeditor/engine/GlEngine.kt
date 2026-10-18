@@ -187,6 +187,13 @@ class GlEngine {
         attribCache.clear()
         // EGL context loss invalidates all texture IDs; force dummy LUT re-creation.
         dummyLutTexId = 0
+        // EGL context loss also invalidates the source texture and LUT state:
+        // reset them so setSource() recreates the texture and LUTs are re-uploaded.
+        // Without this, stale non-zero IDs skip lazy re-creation, binding invalid
+        // GL objects → black preview on Mali after surface recreation.
+        srcTexture = 0
+        aiLutReady = false
+        lookLutReady = false
         program = linkProgram(Shaders.VERTEX, Shaders.FRAGMENT)
             ?: throw IllegalStateException("main program link failed")
         blurProgram = linkProgram(Shaders.BLUR_VERTEX, Shaders.BLUR_FRAGMENT)
