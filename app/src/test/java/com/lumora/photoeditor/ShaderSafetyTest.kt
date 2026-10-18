@@ -143,6 +143,67 @@ class ShaderSafetyTest {
         assertTrue(ShaderSafety.audit(listOf("CONSTLOOP" to src)).isEmpty())
     }
 
+    @Test fun dynamic_while_condition_is_flagged() {
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform int uCount;
+            void main() {
+                float s = 0.0;
+                int i = 0;
+                while (i < uCount) { s += float(i); i++; }
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("DYNWHILE" to src))
+        assertTrue(issues.any { it.rule == "dynamic-while-condition" })
+        assertTrue(issues.any { it.line.contains("uCount") })
+    }
+
+    @Test fun do_while_dynamic_condition_is_flagged() {
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform int uCount;
+            void main() {
+                float s = 0.0;
+                int i = 0;
+                do { s += float(i); i++; } while (i < uCount);
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("DODYNWHILE" to src))
+        assertTrue(issues.any { it.rule == "dynamic-while-condition" })
+    }
+
+    @Test fun while_counter_against_literal_is_flagged() {
+        // Strict by design: unlike `for`, there is no declared loop
+        // variable to exempt, so even `while (i < 4)` is flagged — the
+        // audit cannot prove `i` is a simple counter, and the safe rewrite
+        // is a constant-bound `for`, which rule (d) already blesses.
+        val src = """
+            #version 300 es
+            precision highp float;
+            void main() {
+                float s = 0.0;
+                int i = 0;
+                while (i < 4) { s += float(i); i++; }
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("STRICTWHILE" to src))
+        assertTrue(issues.any { it.rule == "dynamic-while-condition" })
+    }
+
+    @Test fun literal_while_condition_passes() {
+        val src = """
+            #version 300 es
+            precision highp float;
+            void main() {
+                float s = 0.0;
+                while (true) { s += 1.0; if (s > 4.0) break; }
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("LITWHILE" to src)).isEmpty())
+    }
+
     @Test fun commented_out_code_is_ignored() {
         val src = """
             #version 300 es

@@ -18,8 +18,13 @@ package com.lumora.photoeditor.engine
  * Mali trip hazard: `for` loops whose trip count is not a compile-time
  * constant. Dynamic bounds are legal ES 3.00, but several Mali generations
  * miscompile (or refuse to unroll) them in fragment shaders; the shipped
- * shaders only use constant bounds and this keeps it that way.
- * This audit scans every shipped shader for all three patterns so a
+ * shaders only use constant bounds and this keeps it that way. Rule (e)
+ * covers the same hazard in its `while` / `do`-`while` form, which rule (d)
+ * does not see: any `while` condition naming an identifier (a uniform, a
+ * varying, a mutable counter) is flagged, so only literal conditions such
+ * as `while (true)` with an internal break may appear. The shipped shaders
+ * contain no `while` loops at all, so the rule is pure future-proofing.
+ * This audit scans every shipped shader for all five patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
  * tests.
@@ -75,6 +80,16 @@ object ShaderSafety {
     /** GLSL keywords that may legally appear in a constant loop bound. */
     private val loopBoundKeywords = setOf("int", "uint", "float", "bool")
 
+    /**
+     * `while` loop conditions, group 1 = the condition expression. Also
+     * matches the trailing `while (…)` of a `do`-`while` — the same hazard.
+     * The `\b` keeps identifiers like `meanwhile` from matching.
+     */
+    private val whileLoop = Regex("""\bwhile\s*\(\s*([^)]*)\)""")
+
+    /** Boolean literals: the only identifiers legal in a `while` condition. */
+    private val whileLiteralKeywords = setOf("true", "false")
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -92,9 +107,11 @@ object ShaderSafety {
      *    (covers loop-indexed and uniform-indexed sampling),
      *  - any precision statement applied to a sampler type,
      *  - any sampler uniform without an explicit precision qualifier in a
-     *    `#version 300 es` source (no default sampler precision there), and
+     *    `#version 300 es` source (no default sampler precision there),
      *  - any `for` loop whose trip count is not a compile-time constant
-     *    (dynamic loop bound — a classic Mali miscompile hazard).
+     *    (dynamic loop bound — a classic Mali miscompile hazard), and
+     *  - any `while` / `do`-`while` condition naming an identifier
+     *    (dynamic while condition — the same hazard class as (d)).
      */
     fun audit(sources: List<Pair<String, String>>): List<ShaderSafetyIssue> {
         val issues = mutableListOf<ShaderSafetyIssue>()
@@ -154,6 +171,28 @@ object ShaderSafety {
                     issues += ShaderSafetyIssue(name, lineNumber,
                         "dynamic-loop-bound",
                         "non-constant loop bound in: $header")
+                }
+            }
+            // Pass 4: every `while` / `do`-`while` condition must be a
+            // compile-time constant expression. Unlike `for`, there is no
+            // declared loop variable to exempt, so any identifier (uniform,
+            // varying, mutable counter) makes the trip count dynamic — the
+            // same Mali miscompile hazard as rule (d). Only boolean
+            // literals (e.g. `while (true)` with an internal break) pass.
+            // The shipped shaders contain no `while` loops, so this pass is
+            // future-proofing: newly introduced `while` loops must use
+            // literal conditions or be rewritten as constant-bound `for`.
+            whileLoop.findAll(code).forEach { m ->
+                val cond = m.groupValues[1]
+                val dynamic = identifier.findAll(cond)
+                    .map { it.value }
+                    .any { it !in loopBoundKeywords && it !in whileLiteralKeywords }
+                if (dynamic) {
+                    val lineNumber =
+                        code.substring(0, m.range.first).count { it == '\n' } + 1
+                    issues += ShaderSafetyIssue(name, lineNumber,
+                        "dynamic-while-condition",
+                        "non-constant while condition in: while (${cond.trim()})")
                 }
             }
         }
