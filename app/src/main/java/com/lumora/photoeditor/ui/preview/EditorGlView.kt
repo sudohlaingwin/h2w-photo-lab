@@ -176,6 +176,10 @@ fun EditorGlView(
     // a persistently broken GPU keeps the working fallback, never a loop.
     val watchdogMsg by vm.previewWatchdog.collectAsState()
     var glFailed by remember { mutableStateOf<String?>(null) }
+    /** Bumped each time the user retries after a GL failure: forces the
+     *  GLSurfaceView to be recreated with a fresh engine, because a GLView
+     *  whose render thread hit a fatal error never draws again. */
+    var glEpoch by remember { mutableIntStateOf(0) }
     var cursor by remember { mutableStateOf<BrushCursor?>(null) }
     /** Brush loupe frame (magnified pixels under the brush), or null when
      *  hidden. The bitmap is owned here: recycled on replace/dispose. */
@@ -245,14 +249,24 @@ fun EditorGlView(
         }
     }
     // Software fallback if GL initialization fails (prevents crash), or if
-    // the black-frame watchdog tripped (GPU renders black: show the unedited
-    // photo instead of a dead screen; the user's edits are safe).
-    val fallbackMsg = glFailed?.let { "GPU preview unavailable: $it" }
-        ?: watchdogMsg?.let {
-            "Preview watchdog: the GPU frame went black, so you're seeing " +
-                "the unedited photo. Your edits are safe.\n$it"
-        }
-    if (fallbackMsg != null) {
+    // the black-frame watchdog tripped (GPU renders black: show the software
+    // preview instead of a dead screen; the user's edits are safe). The retry
+    // below recreates the GLSurfaceView (glEpoch) and re-establishes GPU
+    // assets, so a one-off driver hiccup is recoverable without leaving the
+    // editor. Retry is manual so a persistently broken GPU keeps the working
+    // fallback, never a loop.
+    val glErr = glFailed
+    val watchdog = watchdogMsg
+    if (glErr != null || watchdog != null) {
+        // Friendly headline for the user; the raw technical detail stays as
+        // a dimmer caption underneath so it can still be diagnosed.
+        val headline = if (watchdog != null)
+            "Preview watchdog: the GPU frame went black"
+        else
+            "GPU preview isn't working on this device"
+        val subline = "You're seeing the software preview instead. " +
+            "Your edits are safe and export is unaffected."
+        val detail = (glErr ?: watchdog)?.take(220)
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -268,31 +282,54 @@ fun EditorGlView(
                     contentScale = ContentScale.Fit,
                 )
             }
-            // Always show the reason so it can be diagnosed. Design-system
-            // chip (caption + danger on a scrim) so it stays readable over
-            // any photo — or centered on the empty background when no frame
-            // ever rendered.
+            // Design-system chip (scrim) so it stays readable over any photo
+            // — or centered on the empty background when no frame ever
+            // rendered.
             Column(
                 modifier = Modifier
                     .align(if (bmp != null) Alignment.BottomCenter else Alignment.Center)
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    text = fallbackMsg,
-                    style = Lumora.type.caption,
-                    color = Lumora.colors.danger,
+                Column(
                     modifier = Modifier
                         .background(Lumora.colors.scrim, RoundedCornerShape(8.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-                if (watchdogMsg != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LumoraButton(
-                        onClick = { vm.retryGpuPreview() },
-                    ) {
-                        Text("Retry GPU preview")
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = headline,
+                        style = Lumora.type.body,
+                        color = Lumora.colors.textPrimary,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subline,
+                        style = Lumora.type.caption,
+                        color = Lumora.colors.textSecondary,
+                    )
+                    if (!detail.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Details: $detail",
+                            style = Lumora.type.caption,
+                            color = Lumora.colors.textSecondary.copy(alpha = 0.75f),
+                        )
                     }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LumoraButton(
+                    onClick = {
+                        // A GLView whose render thread hit a fatal error never
+                        // draws again: clear the error, recreate the view
+                        // (glEpoch) and re-establish GPU assets for a
+                        // genuinely fresh attempt.
+                        glFailed = null
+                        glEpoch++
+                        vm.retryGpuPreview()
+                    },
+                ) {
+                    Text("Retry GPU preview")
                 }
             }
         }
@@ -300,9 +337,17 @@ fun EditorGlView(
     }
 
     Box(modifier) {
+        // Keyed on glEpoch so a user-initiated retry after a GL failure
+        // builds a brand-new GLSurfaceView with a fresh render thread (a view
+        // whose thread hit a fatal error never draws again).
+        key(glEpoch) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
             factory = { ctx ->
+                // Stop the outgoing view's render thread (if any) before it
+                // is replaced, so a dead surface's thread can never touch EGL
+                // again (EGL_BAD_SURFACE spam / occasional Mali crash).
+                glHost.view?.onPause()
                 GLView(ctx).also { view ->
                     glHost.view = view
                     view.setVm(vm)
@@ -407,6 +452,7 @@ fun EditorGlView(
                 view.setPendingFrame(frame)
             },
         )
+        } // key(glEpoch)
         // Brush-size cursor ring: white ring with a dark halo so it stays
         // visible on any photo, plus a center dot marking the touch point.
         cursor?.let { c ->
