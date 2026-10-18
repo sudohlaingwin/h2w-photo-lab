@@ -15,6 +15,10 @@ fun DetailPanel(vm: EditorViewModel) {
     val d = state.detail
     // One-tap auto-denoise feedback: what was suggested, or why nothing changed.
     var denoiseOutcome by remember { mutableStateOf<EditorViewModel.AutoDenoiseOutcome?>(null) }
+    // Stale guard: the analysis may finish after the user opened another
+    // photo — never show one photo's denoise verdict on the next.
+    val libraryImage by vm.libraryImage.collectAsState()
+    LaunchedEffect(libraryImage?.id) { denoiseOutcome = null }
     PanelColumn {
         PanelHeader(
             title = "Detail",
