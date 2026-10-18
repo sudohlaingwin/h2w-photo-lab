@@ -36,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -1523,17 +1524,56 @@ private fun PhotoCell(
             cacheKey = editedThumb?.let { "${img.id}-$sidecarMtime" }
                 ?: rawThumb?.let { "${img.id}-raw" },
         )
-        // badges
+        // Legibility scrims: badge pills and rating dots sit on top of the
+        // photo itself, so give them a soft gradient scrim — otherwise the
+        // white star vanishes on a bright sky and the accent dots vanish on
+        // a light floor. Top scrim only where badges live; bottom scrim
+        // only when the rating row is present.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(46.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0x66000000), Color.Transparent)
+                    )
+                ),
+        )
+        if (selectionMode && selected) {
+            // Scan-at-a-glance selection tint: the 28dp check circle alone
+            // is too small to spot at 4–5 columns. A soft full-cell accent
+            // wash marks selected photos without covering the badges —
+            // badges are composed after this overlay and stay bright.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Lumora.colors.accent.copy(alpha = 0.16f)),
+            )
+        }
+        // badges — one consistent pill style: 8dp rounded dark pill so the
+        // star/edit/RAW marks read as one visual family instead of mixed
+        // circles, bare icons and rounded rects.
         Row(
             modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (img.favorite) {
-                Icon(Icons.Default.Star, "Favorite", tint = Lumora.colors.accent,
-                    modifier = Modifier.size(16.dp))
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xAA000000))
+                        .padding(horizontal = 6.dp, vertical = 5.dp)
+                ) {
+                    Icon(Icons.Default.Star, "Favorite", tint = Lumora.colors.accent,
+                        modifier = Modifier.size(14.dp))
+                }
             }
             if (img.editCount > 0) {
-                Box(Modifier.clip(CircleShape).background(Color(0xAA000000)).padding(4.dp)) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xAA000000))
+                        .padding(horizontal = 6.dp, vertical = 5.dp)
+                ) {
                     Icon(Icons.Default.Edit, "Edited", tint = Color.White,
                         modifier = Modifier.size(12.dp))
                 }
@@ -1542,15 +1582,26 @@ private fun PhotoCell(
             // RAW imports are recognizable in the grid at a glance.
             if (RawDecoder.isRaw(img.displayName)) {
                 Box(
-                    Modifier.clip(RoundedCornerShape(6.dp))
+                    Modifier.clip(RoundedCornerShape(8.dp))
                         .background(Color(0xAA000000))
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
                 ) {
                     Text("RAW", style = Lumora.type.toolLabel, color = Color.White)
                 }
             }
         }
         if (img.rating > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(34.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0x73000000))
+                        )
+                    ),
+            )
             Row(
                 modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
