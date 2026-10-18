@@ -38,7 +38,7 @@ object Inpainting {
     /**
      * Removes the masked region from [bmp].
      * @param bmp source image (any size)
-     * @param mask same-size ALPHA_8 or ARGB bitmap; white/alpha>128 = remove
+     * @param mask same-size ALPHA_8 or ARGB bitmap; max(alpha, red) > 100 = remove
      * @param onProgress 0..1 progress callback (called on worker thread)
      * @return new bitmap with the region filled, or null on failure
      */
@@ -102,8 +102,23 @@ object Inpainting {
             throw t
         }
         try {
+            // Fill-fraction guard against the FULL photo, not the crop: the
+            // crop is the mask bounds + margin by construction, so a
+            // crop-relative cap would misfire on ordinary medium-sized
+            // removals (a solid mask with side ~83px+ already covers 40% of
+            // its own margined crop). Refuse only genuinely absurd jobs —
+            // filling most of the photo.
+            val cropMaskPx = IntArray(bw * bh)
+            cropMask.getPixels(cropMaskPx, 0, bw, 0, 0, bw, bh)
+            var cropFill = 0
+            for (f in InpaintingCore.buildFillMask(cropMaskPx)) if (f) cropFill++
+            if (cropFill > bmp.width.toLong() * bmp.height *
+                InpaintingCore.MAX_FILL_FRACTION
+            ) return null
+            // The crop-relative fill cap is disabled here (see removeFull):
+            // the guard above already applied it against the full photo.
             val filled = removeFull(cropBmp, cropMask, { p -> onProgress(p * 0.9f) },
-                CROP_WORK_MAX) ?: return null
+                CROP_WORK_MAX, enforceFillCap = false) ?: return null
             onProgress(0.95f)
             // blendCropped only READS `filled` (getPixels) — it never takes
             // ownership — so it must be recycled here; previously one
@@ -123,6 +138,13 @@ object Inpainting {
      * The legacy full-image pipeline: downscale to [workMaxPx], inpaint,
      * upscale and feather-blend the masked area back in.
      *
+     * [enforceFillCap] refuses jobs that would fill more than
+     * [InpaintingCore.MAX_FILL_FRACTION] of the working image. The crop
+     * path passes false: the crop IS the mask bounds + margin by
+     * construction, so a crop-relative cap would refuse ordinary
+     * medium-sized removals — removeCropped applies the same cap against
+     * the full photo instead.
+     *
      * Quality is best for textured backgrounds; large flat areas may show
      * repetition.
      */
@@ -131,6 +153,7 @@ object Inpainting {
         mask: Bitmap,
         onProgress: (Float) -> Unit = {},
         workMaxPx: Int = InpaintingCore.WORK_MAX,
+        enforceFillCap: Boolean = true,
     ): Bitmap? {
         val w = bmp.width; val h = bmp.height
         if (w < 16 || h < 16) return null
@@ -165,8 +188,11 @@ object Inpainting {
             var fillCount = 0
             for (b in toFill) if (b) fillCount++
             if (fillCount == 0) return bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, true)
-            // Don't try to fill more than 40% of the image
-            if (fillCount > sw * sh * InpaintingCore.MAX_FILL_FRACTION) return null
+            // Don't try to fill more than 40% of the image. Disabled for the
+            // crop path (see KDoc): the guard would misfire against the crop.
+            if (enforceFillCap &&
+                fillCount > sw * sh * InpaintingCore.MAX_FILL_FRACTION
+            ) return null
 
             val result = InpaintingCore.inpaint(pixels, toFill, sw, sh) {
                 onProgress(it * 0.9f)
