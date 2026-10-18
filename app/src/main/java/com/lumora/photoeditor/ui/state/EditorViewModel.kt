@@ -509,6 +509,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val img = container.library.byId(imageId)
                     ?: throw IllegalStateException("Photo not found in library")
                 _libraryImage.value = img
+                // A newly opened photo invalidates any in-flight auto
+                // analysis: their results belong to the previous photo and
+                // must never be applied here (photo-change race; each apply
+                // path also re-checks the photo id on the main thread before
+                // applying).
+                autoEnhanceJob?.cancel()
+                proAutoJob?.cancel()
+                autoRetouchJob?.cancel()
                 val uri = Uri.parse(img.contentUri)
                 val bmp = withContext(Dispatchers.IO) { decodePreview(uri) }
                     ?: throw IllegalStateException("Could not decode this image")
@@ -2899,11 +2907,20 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // tap re-applies onto the pre-auto state, so tapping Auto twice
         // can't stack the correction (idempotent).
         val base = autoBase()
+        // Photo-change race: capture which photo this tap belongs to. The
+        // main-thread apply block below bails if the user opened another
+        // photo while the analysis ran, so this photo's correction can never
+        // land on the new photo's state.
+        val tapPhotoId = _libraryImage.value?.id
         autoEnhanceJob?.cancel()
         autoEnhanceJob = guardLaunch(Dispatchers.Default) {
             try {
                 val auto = AutoEnhance.analyze(bmp, strength = 1f)
                 withContext(Dispatchers.Main) {
+                    if (_libraryImage.value?.id != tapPhotoId) {
+                        onDone(AutoEnhanceOutcome.NoChange)
+                        return@withContext
+                    }
                     val summary = AutoEnhanceCore.describe(auto)
                     if (summary.isNotEmpty()) {
                         val currentAtApply = _state.value
@@ -3053,6 +3070,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // repeatedly recomputes the same result instead of stacking the
         // recipe's deltas (user video 2026-10-17: 8 taps -> +2.80 exposure).
         val base = autoBase()
+        // Photo-change race: capture which photo this tap belongs to; the
+        // main-thread apply block bails if a different photo is open by
+        // then, so this photo's recipe (and its auto skin mask) can never
+        // land on the new photo's state.
+        val tapPhotoId = _libraryImage.value?.id
         proAutoJob?.cancel()
         proAutoJob = guardLaunch(Dispatchers.Default) {
             try {
@@ -3067,6 +3089,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (_libraryImage.value?.id != tapPhotoId) {
+                        onDone(ProAutoOutcome.Failed)
+                        return@withContext
+                    }
                     val currentAtApply = _state.value
                     val next = when (scene) {
                         0 -> ProRecipes.applyPortrait(base)
@@ -3132,6 +3158,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // clarity/texture/dehaze deltas (which also made Clear subtract only
         // one delta, leaving stacked residue behind).
         val base = autoBase()
+        // Photo-change race: the fused LUT belongs to this photo; the
+        // main-thread apply block bails if another photo is open by then.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
@@ -3201,6 +3230,15 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.Main) {
                     if (!uploaded) {
                         onDone("AI grade unavailable on this device")
+                        return@withContext
+                    }
+                    if (_libraryImage.value?.id != tapPhotoId) {
+                        // The user opened a different photo mid-bake: the
+                        // fused LUT belongs to the previous photo. Drop it
+                        // and apply nothing (the LUT slot stays gated off
+                        // for the new photo's state, so no stale grade can
+                        // leak into its preview).
+                        onDone(null)
                         return@withContext
                     }
                     val weights = blend.weights.toList()
@@ -3608,6 +3646,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // recompute the same result instead of stacking more heal spots and
         // another skin mask on top (the old behavior).
         val base = autoBase()
+        // Photo-change race: capture which photo this tap belongs to. The
+        // main-thread apply block bails if the user opened another photo
+        // while the detectors ran, so this photo's blemish spots can never
+        // land on the new photo's state.
+        val tapPhotoId = _libraryImage.value?.id
         autoRetouchJob?.cancel()
         autoRetouchJob = guardLaunch(Dispatchers.Default) {
             try {
@@ -3683,6 +3726,17 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             }
 
             withContext(Dispatchers.Main) {
+                if (_libraryImage.value?.id != tapPhotoId) {
+                    // The user opened a different photo while the detectors
+                    // ran: never stamp this photo's blemish spots onto the
+                    // new photo. The skin raster was never saved, so just
+                    // release it and stay silent.
+                    if (skinFound && skinMask != null && !skinMask.isRecycled) {
+                        skinMask.recycle()
+                    }
+                    onDone(AutoRetouchOutcome.NoChange)
+                    return@withContext
+                }
                 // Build the spots as pure data, then apply EVERYTHING onto
                 // the pre-auto baseline in ONE undoable update: heal spots,
                 // under-eye spots and the skin mask together. Applying onto
