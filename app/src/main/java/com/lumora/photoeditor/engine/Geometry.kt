@@ -167,19 +167,29 @@ object Geometry {
         if (geo.flipH) q = q.map { Pt(2 * cx - it.x, it.y) }
         if (geo.flipV) q = q.map { Pt(it.x, 2 * cy - it.y) }
         // Keystone perspective: taper opposite edges so the quad becomes a
-        // true trapezoid (projective warp). +V widens the top relative to
-        // the bottom (corrects verticals converging toward the top when the
-        // camera is tilted up); +H lengthens the left edge relative to the
-        // right. NOTE: the old code shifted both edges the same way, which
-        // is a uniform scale about the center — the bounding-box fit below
-        // cancelled it, so the old sliders were a visual no-op.
+        // true trapezoid (projective warp). The quad is the photo region
+        // stretched across the screen, so a NARROWER quad edge MAGNIFIES
+        // that side of the rendered image: +V narrows the quad's top edge,
+        // which widens the rendered top — correcting verticals that
+        // converge toward the top when the camera is tilted up (Lightroom
+        // +Vertical parity). +H lengthens the quad's left edge, minifying
+        // the rendered left side (corrects the closer/larger side when
+        // shooting a facade from the left).
+        // NOTE: an earlier revision had the V taper backwards (+V widened
+        // the quad's top, which minified the rendered top — the opposite of
+        // the documented intent and of Lightroom). Solver-backed probing
+        // (2026-10-19) showed the value correcting converging verticals
+        // came out negative; the signs below are the corrected ones.
+        // (The still-older code shifted both edges the same way, which is
+        // a uniform scale about the center — the bounding-box fit in
+        // uvMatrix cancelled it, so the old sliders were a visual no-op.)
         val pv = geo.perspectiveV / 100f; val ph = geo.perspectiveH / 100f
         val w = r - l; val h = b - t
         q = listOf(
-            Pt(q[0].x - pv * w * 0.5f, q[0].y - ph * h * 0.5f), // TL
-            Pt(q[1].x + pv * w * 0.5f, q[1].y + ph * h * 0.5f), // TR
-            Pt(q[2].x + pv * w * 0.5f, q[2].y + ph * h * 0.5f), // BL
-            Pt(q[3].x - pv * w * 0.5f, q[3].y - ph * h * 0.5f), // BR
+            Pt(q[0].x + pv * w * 0.5f, q[0].y - ph * h * 0.5f), // TL
+            Pt(q[1].x - pv * w * 0.5f, q[1].y + ph * h * 0.5f), // TR
+            Pt(q[2].x - pv * w * 0.5f, q[2].y + ph * h * 0.5f), // BL
+            Pt(q[3].x + pv * w * 0.5f, q[3].y - ph * h * 0.5f), // BR
         )
         return q
     }
