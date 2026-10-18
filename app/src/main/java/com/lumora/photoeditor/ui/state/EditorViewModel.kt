@@ -88,6 +88,26 @@ sealed interface AiUiState {
 
 class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
+    /**
+     * Uniform crash guard for every fire-and-forget editor job (crash-risk
+     * hardening cycle; mirrors LibraryViewModel). An uncaught throw inside
+     * any viewModelScope child cancels the whole scope — potentially taking
+     * down the app — so every launch in this ViewModel goes through here: a
+     * pathological bitmap/decoder/file throw is warn-logged and the scope
+     * survives. Callers that need a result keep their own try/catch; this
+     * is the backstop. Cancellation is never swallowed
+     * (CoroutineExceptionHandler ignores CancellationException by contract).
+     */
+    private val scopeGuard = CoroutineExceptionHandler { _, t ->
+        android.util.Log.w("EditorViewModel", "editor job failed", t)
+    }
+
+    private fun guardLaunch(block: suspend CoroutineScope.() -> Unit) =
+        viewModelScope.launch(scopeGuard, block = block)
+
+    private fun guardLaunch(dispatcher: CoroutineDispatcher, block: suspend CoroutineScope.() -> Unit) =
+        viewModelScope.launch(scopeGuard + dispatcher, block = block)
+
     private val _imageId = MutableStateFlow<String?>(null)
     val imageId = _imageId.asStateFlow()
 
@@ -109,7 +129,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun setRating(rating: Int) {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.library.setRating(id, rating.coerceIn(0, 5))
             } catch (t: Throwable) {
@@ -130,7 +150,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun duplicateCurrent(onDone: (String?) -> Unit) {
         val id = _imageId.value ?: run { onDone(null); return }
-        viewModelScope.launch {
+        guardLaunch {
             val newId = try {
                 saveJob?.cancelAndJoin()
                 container.editStore.save(id, _state.value)
@@ -361,7 +381,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             )
             return
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             val previewBmp = _preview.value
             val done = CompletableDeferred<SelfTestResult>()
             host.queueGl {
@@ -475,7 +495,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         _loading.value = true
         _error.value = null
         _embeddedPreviewFormat.value = null
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 val img = container.library.byId(imageId)
                     ?: throw IllegalStateException("Photo not found in library")
@@ -802,7 +822,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     private fun recordHistory(label: String) {
         val id = _imageId.value ?: return
         val json = container.editStore.encode(_state.value)
-        viewModelScope.launch {
+        guardLaunch {
             // Best-effort persistence: a DB hiccup must never crash the editor.
             try {
                 container.library.recordEdit(id, label, json)
@@ -817,7 +837,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /** Reloads the persisted edit history for the open photo. */
     fun refreshHistory() {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 _historyEntries.value = container.library.history(id)
             } catch (e: Exception) {
@@ -845,7 +865,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /** Clears the history list (the current edits are NOT touched). */
     fun clearHistory() {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.library.clearHistory(id)
                 _historyEntries.value = emptyList()
@@ -867,7 +887,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /** Reloads this photo's snapshots (called on open + after mutations). */
     fun refreshSnapshots() {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.snapshots.refresh(id)
             } catch (e: Exception) {
@@ -881,7 +901,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun takeSnapshot(name: String, onDone: (Boolean) -> Unit) {
         val id = _imageId.value ?: run { onDone(false); return }
         val state = _state.value
-        viewModelScope.launch {
+        guardLaunch {
             val ok = try {
                 container.snapshots.take(id, name, state) != null
             } catch (e: Exception) {
@@ -904,7 +924,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     fun deleteSnapshot(snapshotId: String) {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.snapshots.delete(id, snapshotId)
             } catch (e: Exception) {
@@ -916,7 +936,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     fun renameSnapshot(snapshotId: String, name: String) {
         val id = _imageId.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.snapshots.rename(id, snapshotId, name)
             } catch (e: Exception) {
@@ -930,7 +950,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         saveJob?.cancel()
         val id = _imageId.value ?: return
         val snapshot = _state.value
-        saveJob = viewModelScope.launch {
+        saveJob = guardLaunch {
             delay(900)
             // Best-effort: autosave fires after every edit, so it must never
             // crash the editor (e.g. disk full, serialization edge case).
@@ -1090,9 +1110,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun autoStraighten(onNoHorizon: () -> Unit = {}) {
         val bmp = _preview.value ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             val w = bmp.width; val h = bmp.height
-            if (w <= 0 || h <= 0) return@launch
+            if (w <= 0 || h <= 0) return@guardLaunch
             // Both the pixel-buffer allocation and getPixels can throw on
             // constrained devices (OutOfMemoryError); the analysis is
             // best-effort, so a failed read quietly skips straightening
@@ -1103,7 +1123,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 buf
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                return@launch
+                return@guardLaunch
             }
             val level = try {
                 Straighten.detectHorizon(px, w, h)
@@ -1227,10 +1247,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
-                if (w <= 0 || h <= 0) return@launch
+                if (w <= 0 || h <= 0) return@guardLaunch
                 val sw = 96
                 val sh = (96L * h / w).toInt().coerceAtLeast(1)
                 val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
@@ -1245,7 +1265,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 val n = px.size.toFloat()
                 val sol = ImageMath.autoWhiteBalance(sr / n / 255f, sg / n / 255f, sb / n / 255f)
-                    ?: return@launch
+                    ?: return@guardLaunch
                 withContext(Dispatchers.Main) {
                     update("Auto white balance") { s ->
                         s.copy(light = s.light.copy(temp = sol.first * 100f, tint = sol.second * 100f))
@@ -1297,17 +1317,17 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: return
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
-                if (w <= 0 || h <= 0) return@launch
+                if (w <= 0 || h <= 0) return@guardLaunch
                 val sw = 96
                 val sh = (96L * h / w).toInt().coerceAtLeast(1)
                 val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
                 val px = IntArray(sw * sh)
                 small.getPixels(px, 0, sw, 0, 0, sw, sh)
                 small.recycle()
-                val est = AutoLens.analyzeVignette(px, sw, sh) ?: return@launch
+                val est = AutoLens.analyzeVignette(px, sw, sh) ?: return@guardLaunch
                 withContext(Dispatchers.Main) {
                     autoLensEstimate = est
                     _autoLensApplied.value = true
@@ -1374,7 +1394,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun requestRender() {
         renderJob?.cancel()
         val bmp = _preview.value ?: return
-        renderJob = viewModelScope.launch(Dispatchers.Default) {
+        renderJob = guardLaunch(Dispatchers.Default) {
             val s = _state.value
             val vw = viewW.coerceAtLeast(1); val vh = viewH.coerceAtLeast(1)
             // In crop preview mode, ignore s.crop in the matrix so the full
@@ -1549,7 +1569,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // RGB parade: per-channel column envelopes from the same buffer
         // (cheap: <= 49k absolute reads, buffer position untouched).
         _rgbParade.value = rgbParadeFromRgba(buf, w, h)
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             _histogram.value = computeHistogram(sample, n)
         }
     }
@@ -1597,7 +1617,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         if (bmp !== lastWatchdogBmp) {
             lastWatchdogBmp = bmp
             lastSourceLuma = -1f
-            viewModelScope.launch(Dispatchers.Default) {
+            guardLaunch(Dispatchers.Default) {
                 lastSourceLuma = ImageMath.meanLuma(bmp)
             }
         }
@@ -1826,7 +1846,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun runAiComponent(maskId: String, kind: MaskType, op: MaskOp, label: String) {
         val bmp = _preview.value ?: return
         if (_state.value.masks.none { it.id == maskId }) return
-        viewModelScope.launch {
+        guardLaunch {
             _aiUi.value = AiUiState.Working(label)
             try {
                 val raster: Bitmap = when (kind) {
@@ -1864,7 +1884,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     fun runAiMask(kind: MaskType, label: String, errorHint: String? = null) {
         val bmp = _preview.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             _aiUi.value = AiUiState.Working(label)
             try {
                 val raster: Bitmap = when (kind) {
@@ -1931,7 +1951,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             })
         }
         lumaRefreshJob?.cancel()
-        lumaRefreshJob = viewModelScope.launch {
+        lumaRefreshJob = guardLaunch {
             delay(90)
             refreshLuminanceRaster(maskId, compId)
         }
@@ -2046,12 +2066,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      *  band settings and re-renders the preview. Safe to call any time. */
     fun refreshLuminanceRaster(maskId: String, compId: String) {
         lumaRefreshJob?.cancel()
-        viewModelScope.launch {
+        guardLaunch {
             try {
-                val bmp = _preview.value ?: return@launch
+                val bmp = _preview.value ?: return@guardLaunch
                 val comp = _state.value.masks.find { it.id == maskId }
-                    ?.components?.find { it.id == compId } ?: return@launch
-                val key = comp.aiKey ?: return@launch
+                    ?.components?.find { it.id == compId } ?: return@guardLaunch
+                val key = comp.aiKey ?: return@guardLaunch
                 val raster = withContext(Dispatchers.Default) {
                     ImageMath.luminanceRangeBitmap(
                         bmp, comp.lumaLo, comp.lumaHi, comp.lumaFeather)
@@ -2091,7 +2111,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             })
         }
         depthRefreshJob?.cancel()
-        depthRefreshJob = viewModelScope.launch {
+        depthRefreshJob = guardLaunch {
             delay(90)
             refreshDepthRaster(maskId, compId)
         }
@@ -2101,12 +2121,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      *  band settings and re-renders the preview. Safe to call any time. */
     fun refreshDepthRaster(maskId: String, compId: String) {
         depthRefreshJob?.cancel()
-        viewModelScope.launch {
+        guardLaunch {
             try {
-                val bmp = _preview.value ?: return@launch
+                val bmp = _preview.value ?: return@guardLaunch
                 val comp = _state.value.masks.find { it.id == maskId }
-                    ?.components?.find { it.id == compId } ?: return@launch
-                val key = comp.aiKey ?: return@launch
+                    ?.components?.find { it.id == compId } ?: return@guardLaunch
+                val key = comp.aiKey ?: return@guardLaunch
                 val raster = withContext(Dispatchers.Default) {
                     ImageMath.depthRangeBitmap(
                         bmp, comp.depthLo, comp.depthHi, comp.depthFeather)
@@ -2141,7 +2161,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun addColorRangeMask(r: Float, g: Float, b: Float) {
         val bmp = _preview.value ?: return
-        viewModelScope.launch {
+        guardLaunch {
             _aiUi.value = AiUiState.Working("Color range")
             try {
                 val raster = ImageMath.colorRangeBitmap(
@@ -2176,7 +2196,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun addColorRangeComponent(maskId: String, op: MaskOp, r: Float, g: Float, b: Float) {
         val bmp = _preview.value ?: return
         if (_state.value.masks.none { it.id == maskId }) return
-        viewModelScope.launch {
+        guardLaunch {
             _aiUi.value = AiUiState.Working("Color range")
             try {
                 val raster = ImageMath.colorRangeBitmap(
@@ -2239,7 +2259,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             })
         }
         colorRefreshJob?.cancel()
-        colorRefreshJob = viewModelScope.launch {
+        colorRefreshJob = guardLaunch {
             delay(90)
             refreshColorRaster(maskId, compId)
         }
@@ -2249,12 +2269,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      *  settings and re-renders the preview. Safe to call any time. */
     fun refreshColorRaster(maskId: String, compId: String) {
         colorRefreshJob?.cancel()
-        viewModelScope.launch {
+        guardLaunch {
             try {
-                val bmp = _preview.value ?: return@launch
+                val bmp = _preview.value ?: return@guardLaunch
                 val comp = _state.value.masks.find { it.id == maskId }
-                    ?.components?.find { it.id == compId } ?: return@launch
-                val key = comp.aiKey ?: return@launch
+                    ?.components?.find { it.id == compId } ?: return@guardLaunch
+                val key = comp.aiKey ?: return@guardLaunch
                 val raster = withContext(Dispatchers.Default) {
                     ImageMath.colorRangeBitmapSamples(
                         bmp, colorTargetsOf(comp),
@@ -2391,7 +2411,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         val preview = _preview.value ?: return
         val uri = Uri.parse(img.contentUri)
         _exportUi.value = ExportUiState.Running(0f)
-        viewModelScope.launch {
+        guardLaunch {
             // export-res masks (1024) + retouch at decode size handled inside.
             // Rasterizing can throw (OOM at high export sizes); fail with a
             // clear message instead of crashing the editor out from under
@@ -2413,7 +2433,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         "Not enough memory to prepare the export — try a smaller export size or close other apps"
                     else "Could not prepare masks for export (${t.message ?: "error"})"
                 )
-                return@launch
+                return@guardLaunch
             }
             // Hair decontamination textures for the export render. The despill
             // bitmap is low-frequency by construction (inward-filled interior
@@ -2456,7 +2476,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         exportMasks = exportMasks,
                         exportDecon = exportDecon,
                         retouchSpots = _state.value.retouch.spots,
-                        glEngine = glEngineRef ?: return@launch run {
+                        glEngine = glEngineRef ?: return@guardLaunch run {
                             _exportUi.value = ExportUiState.Error("Renderer not ready")
                         },
                         glHost = glHost,
@@ -2544,7 +2564,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             onResult(false, "No API key saved")
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        guardLaunch(Dispatchers.IO) {
             try {
                 // Discover which models this key can actually use; fall back to
                 // the hardcoded list when discovery fails. 404 = deprecated, try next.
@@ -2668,11 +2688,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         }
         if (_aiAssistant.value.isLoading) return
         _aiAssistant.update { it.copy(isLoading = true, error = null, pendingSuggestions = null) }
-        viewModelScope.launch {
+        guardLaunch {
             val base64 = encodeImageForAi()
             if (base64 == null) {
                 _aiAssistant.update { it.copy(isLoading = false, error = "Could not load image.") }
-                return@launch
+                return@guardLaunch
             }
             val userMsg = AiChatMessage("user", "📷 Analyze my current photo")
             _aiAssistant.update { it.copy(messages = it.messages + userMsg) }
@@ -2723,7 +2743,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 messages = it.messages + AiChatMessage("user", text),
             )
         }
-        viewModelScope.launch {
+        guardLaunch {
             val history = _aiAssistant.value.messages
             when (val r = geminiClient.chat(key, history, buildSettingsSummary())) {
                 is GeminiClient.Result.Success -> {
@@ -2866,7 +2886,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // can't stack the correction (idempotent).
         val base = autoBase()
         autoEnhanceJob?.cancel()
-        autoEnhanceJob = viewModelScope.launch(Dispatchers.Default) {
+        autoEnhanceJob = guardLaunch(Dispatchers.Default) {
             try {
                 val auto = AutoEnhance.analyze(bmp, strength = 1f)
                 withContext(Dispatchers.Main) {
@@ -2942,7 +2962,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(AutoDenoiseOutcome.Failed); return }
         autoDenoiseJob?.cancel()
-        autoDenoiseJob = viewModelScope.launch(Dispatchers.Default) {
+        autoDenoiseJob = guardLaunch(Dispatchers.Default) {
             try {
                 val origArea = (bmp.width * bmp.height).toFloat()
                 // Downsample to max 256px for speed, like AutoEnhance.
@@ -3020,7 +3040,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // recipe's deltas (user video 2026-10-17: 8 taps -> +2.80 exposure).
         val base = autoBase()
         proAutoJob?.cancel()
-        proAutoJob = viewModelScope.launch(Dispatchers.Default) {
+        proAutoJob = guardLaunch(Dispatchers.Default) {
             try {
                 // Detect scene using AutoEnhance analysis
                 val scene = detectScene(bmp)
@@ -3098,7 +3118,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // clarity/texture/dehaze deltas (which also made Clear subtract only
         // one delta, leaving stacked residue behind).
         val base = autoBase()
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
                 val scale = minOf(1f, 160f / maxOf(w, h))
@@ -3111,11 +3131,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val blend = AiProRetouch.analyze(pixels, sw, sh)
                 if (blend.strength <= 0f) {
                     withContext(Dispatchers.Main) { onDone("Already balanced — no changes needed") }
-                    return@launch
+                    return@guardLaunch
                 }
                 if (!AiLutBank.available) {
                     withContext(Dispatchers.Main) { onDone("AI grade unavailable on this device") }
-                    return@launch
+                    return@guardLaunch
                 }
                 // GL thread first: bake the bank once, fuse this photo's LUT,
                 // upload it. Only when that succeeds do we touch EditState —
@@ -3126,7 +3146,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val previewBmp = _preview.value
                 if (host == null || engine == null || previewBmp == null) {
                     withContext(Dispatchers.Main) { onDone(null) }
-                    return@launch
+                    return@guardLaunch
                 }
                 val done = CompletableDeferred<Boolean>()
                 host.queueGl {
@@ -3265,18 +3285,18 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun applyLookTransfer(refImageId: String, onDone: (String?) -> Unit = {}) {
         val bmp = snapshotPreview() ?: run { onDone(null); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val ref = container.library.byId(refImageId)
                 val refUri = ref?.contentUri?.let { Uri.parse(it) }
                 if (refUri == null) {
                     withContext(Dispatchers.Main) { onDone(null) }
-                    return@launch
+                    return@guardLaunch
                 }
                 val refBmp = decodeDownscaled(refUri, 320)
                 if (refBmp == null) {
                     withContext(Dispatchers.Main) { onDone(null) }
-                    return@launch
+                    return@guardLaunch
                 }
                 try {
                     val srcStats = statsOf(bmp)
@@ -3289,7 +3309,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         withContext(Dispatchers.Main) {
                             onDone("Already similar colors — no changes needed")
                         }
-                        return@launch
+                        return@guardLaunch
                     }
                     withContext(Dispatchers.Main) {
                         update("Match look") { s ->
@@ -3449,7 +3469,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: skinMask() reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: run { skinMaskInFlight.set(false); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val skinMask = try {
                     AutoRetouch.skinMask(bmp, feather = 0.5f)
@@ -3465,7 +3485,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     for (p in px) if ((p ushr 24) > 80) skinPx++
                     if (skinPx.toFloat() / (sw * sh) < 0.02f) {
                         skinMask.recycle()
-                        return@launch
+                        return@guardLaunch
                     }
                     val maskId = java.util.UUID.randomUUID().toString()
                     val compId = java.util.UUID.randomUUID().toString()
@@ -3539,7 +3559,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the detectors read pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(0, false, 0, ""); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             // 0. Profile the photo — the "retoucher's assessment" step.
             //    Every later decision adapts to this.
             val profile = try {
@@ -3726,7 +3746,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         onDone: (summary: String) -> Unit = {},
     ) {
         val bmp = snapshotPreview() ?: run { onDone("No photo"); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             // Profile the photo, then apply style intensity.
             val profile = try { RetouchIntel.analyze(bmp) }
                 catch (t: Throwable) { if (t is CancellationException) throw t; null }
@@ -3926,18 +3946,18 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             applyPortraitPrompt(plan, prompt, onResult)
             return
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val bmp = snapshotPreview()
                 if (bmp == null) {
                     onResult("Load a photo first, then describe the edit.")
-                    return@launch
+                    return@guardLaunch
                 }
                 val region = plan.region
                 val maskSpec = region?.let { buildPromptMask(it, bmp) }
                 if (region != null && maskSpec == null) {
                     onResult(PromptEdit.regionMissMessage(region))
-                    return@launch
+                    return@guardLaunch
                 }
                 // Save the mask raster before the state update so the new
                 // mask's aiKey resolves on the first render.
@@ -3990,11 +4010,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         prompt: String,
         onResult: (String) -> Unit,
     ) {
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             val bmp = snapshotPreview()
             if (bmp == null) {
                 onResult("Load a photo first, then describe the edit.")
-                return@launch
+                return@guardLaunch
             }
             try {
                 val spots = try {
@@ -4006,7 +4026,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val hasGlobal = plan.global != PromptGlobal()
                 if (spots.isEmpty() && !hasGlobal) {
                     onResult(portraitMissMessage(plan.portrait!!))
-                    return@launch
+                    return@guardLaunch
                 }
                 beginGesture()
                 try {
@@ -4191,7 +4211,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun applyAutoMask(onDone: (created: List<String>) -> Unit = {}) {
         val bmp = snapshotPreview() ?: run { onDone(emptyList()); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             val analysis = try {
                 AutoMask.analyze(bmp)
             } catch (t: Throwable) { if (t is CancellationException) throw t; null }
@@ -4399,7 +4419,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(); return }
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
                 // Work at max 1024px for performance; scale back up if needed
@@ -4609,7 +4629,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         if (_isRemoving.value) { base.recycle(); return }
 
         _isRemoving.value = true
-        viewModelScope.launch(Dispatchers.Default) {
+        guardLaunch(Dispatchers.Default) {
             try {
                 val result = Inpainting.removeObject(base, mask) { _ -> }
                 withContext(Dispatchers.Main) {
