@@ -110,29 +110,39 @@ class ExportManager(private val context: Context) {
                     // the full-res bitmap must not leak on the failure path.
                     bitmap.recycle()
                 }
-                if (cancelled.get()) return@withContext Result.failure(CancellationException())
-
-                onProgress(0.90f)
-                // 4. metadata
-                if (job.settings.keepMetadata) copyExif(job.sourceUri, tmp)
-
-                // 4b. sRGB ICC profile embedding (JPEG/PNG) — the last
-                // byte-level edit of the export, so the EXIF rewrite above
-                // cannot disturb the injected segment. Total-safe: a failure
-                // here never breaks the export.
                 try {
-                    embedColorProfile(tmp, job.settings)
-                } catch (_: Throwable) { }
+                    if (cancelled.get()) return@withContext Result.failure(CancellationException())
 
-                // 5. MediaStore insert — blank typed file name now inherits
-                // the source photo's own stem (sourceStemForName) so exports
-                // stay findable; typed names are unchanged (galleryFileName).
-                val uri = insertToGallery(tmp, job.settings, sourceStemForName(job.sourceUri))
-                    ?: return@withContext Result.failure(
-                        IllegalStateException("Could not save to gallery (storage unavailable?)"))
-                tmp.delete()
-                onProgress(1f)
-                Result.success(uri)
+                    onProgress(0.90f)
+                    // 4. metadata
+                    if (job.settings.keepMetadata) copyExif(job.sourceUri, tmp)
+
+                    // 4b. sRGB ICC profile embedding (JPEG/PNG) — the last
+                    // byte-level edit of the export, so the EXIF rewrite above
+                    // cannot disturb the injected segment. Total-safe: a failure
+                    // here never breaks the export.
+                    try {
+                        embedColorProfile(tmp, job.settings)
+                    } catch (_: Throwable) { }
+
+                    // 5. MediaStore insert — blank typed file name now inherits
+                    // the source photo's own stem (sourceStemForName) so exports
+                    // stay findable; typed names are unchanged (galleryFileName).
+                    val uri = insertToGallery(tmp, job.settings, sourceStemForName(job.sourceUri))
+                        ?: return@withContext Result.failure(
+                            IllegalStateException("Could not save to gallery (storage unavailable?)"))
+                    onProgress(1f)
+                    Result.success(uri)
+                } finally {
+                    // The staging file is private to this export: insertToGallery
+                    // streams its bytes into MediaStore, so once this block ends
+                    // — success, failure, or cancellation — the cacheDir copy
+                    // must go. Previously a throwing encode, a cancel after
+                    // encode, or a failed gallery insert left a full-resolution
+                    // JPEG/PNG behind on every attempt, silently filling
+                    // storage. delete() on a missing file is a harmless no-op.
+                    tmp.delete()
+                }
             } catch (t: Throwable) {
                 // Cancellation must propagate so the export coroutine can
                 // actually stop; everything else (notably OutOfMemoryError on
@@ -183,22 +193,27 @@ class ExportManager(private val context: Context) {
     fun saveBitmapToGallery(bitmap: Bitmap, displayName: String): Uri? {
         return try {
             val tmp = File(context.cacheDir, "sheet_${UUID.randomUUID()}.jpg")
-            FileOutputStream(tmp).use { out ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)) return null
+            try {
+                FileOutputStream(tmp).use { out ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)) return null
+                }
+                insertToGallery(
+                    tmp,
+                    ExportSettings(
+                        format = ExportFormat.JPEG,
+                        quality = 88,
+                        fileName = displayName,
+                        keepMetadata = false,
+                        embedColorProfile = false,
+                    ),
+                    sourceStem = null,
+                )
+            } finally {
+                // Staging copy: a compress failure (the early return above)
+                // or a throwing gallery insert must not leave the sheet JPEG
+                // in cacheDir. The success path deletes it here as before.
+                tmp.delete()
             }
-            val uri = insertToGallery(
-                tmp,
-                ExportSettings(
-                    format = ExportFormat.JPEG,
-                    quality = 88,
-                    fileName = displayName,
-                    keepMetadata = false,
-                    embedColorProfile = false,
-                ),
-                sourceStem = null,
-            )
-            tmp.delete()
-            uri
         } catch (t: Throwable) {
             // Documented "never throws": OOM on a big sheet must also come
             // back as null, not a crash.
