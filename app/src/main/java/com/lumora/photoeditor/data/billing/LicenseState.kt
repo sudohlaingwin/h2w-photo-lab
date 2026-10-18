@@ -88,10 +88,11 @@ private const val KEY_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 /**
  * Validates a license key of the form XXXX-XXXX-XXXX-XXXX (A–Z, 0–9).
- * The last character is a weighted-mod-36 check digit over the first 15,
- * so typos are caught without any server: a key is either well-formed or
- * it isn't. Keys themselves are issued by the photographer's future
- * store — this only checks the shape, never "buys" anything.
+ * The last character is a rolling-hash mod-36 check digit over the first
+ * 15 ([checkChar]), so typos are caught without any server: a key is
+ * either well-formed or it isn't. Keys themselves are issued by the
+ * photographer's future store — this only checks the shape, never
+ * "buys" anything.
  */
 fun validateLicenseKey(raw: String): KeyValidation {
     val cleaned = raw.trim().uppercase()
@@ -109,15 +110,27 @@ fun validateLicenseKey(raw: String): KeyValidation {
 }
 
 /**
- * The check digit for a 15-char key body: weighted sum of alphabet
- * indices mod 36. Public so SelfTest (and the future key issuer) can
- * construct valid keys deterministically.
+ * The check digit for a 15-char key body: rolling polynomial hash
+ * (multiplier 31) over the alphabet indices, mod 36. The multiplier is
+ * coprime to 36, so a single-character substitution changes the hash by
+ * delta * 31^k (mod 36) with delta in 1..35 — which can never vanish mod
+ * 36. Result: EVERY one-character typo is caught (proven, and pinned by
+ * the license harness: 0/2625 false accepts across 5 bodies). Adjacent
+ * transpositions are caught except when the two characters' alphabet
+ * indices differ by a multiple of 6 (documented, ~1 in 7 of swaps).
+ *
+ * History: the v1 weighted sum (weights 1..15) shared factors with 36,
+ * so 185/2625 single-char typos (7%) slipped through — e.g. position 11
+ * with an index delta multiple of 3. No keys were ever issued under v1,
+ * and the future key issuer constructs keys through this function, so
+ * the scheme changes cleanly. Public so SelfTest (and the future key
+ * issuer) can construct valid keys deterministically.
  */
 fun checkChar(fifteen: String): Char {
     require(fifteen.length == 15) { "key body must be 15 chars" }
-    var sum = 0
-    fifteen.forEachIndexed { i, c ->
-        sum += KEY_ALPHABET.indexOf(c).coerceAtLeast(0) * (i + 1)
+    var h = 0
+    for (c in fifteen) {
+        h = (h * 31 + KEY_ALPHABET.indexOf(c).coerceAtLeast(0)) % KEY_ALPHABET.length
     }
-    return KEY_ALPHABET[sum % KEY_ALPHABET.length]
+    return KEY_ALPHABET[h]
 }

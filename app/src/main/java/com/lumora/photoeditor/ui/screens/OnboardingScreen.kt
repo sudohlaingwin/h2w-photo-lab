@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.lumora.photoeditor.data.Presets
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import kotlinx.coroutines.launch
@@ -47,7 +49,9 @@ private data class OnboardingPage(
     val body: String,
 )
 
-private val ONBOARDING_PAGES = listOf(
+// The preset count is read from the real built-in list, never hardcoded —
+// the tour must not go stale again when presets are added.
+private fun onboardingPages(presetCount: Int): List<OnboardingPage> = listOf(
     OnboardingPage(
         icon = LumoraIcons.PhotoCamera,
         title = "Welcome to H2W Photo Lab",
@@ -70,7 +74,7 @@ private val ONBOARDING_PAGES = listOf(
     OnboardingPage(
         icon = LumoraIcons.Tune,
         title = "Total control, zero fear",
-        body = "Light, color, detail, geometry, lens blur and 21 hand-tuned " +
+        body = "Light, color, detail, geometry, lens blur and $presetCount hand-tuned " +
             "presets. Every edit is undoable, and export is full resolution.",
     ),
 )
@@ -79,15 +83,18 @@ private val ONBOARDING_PAGES = listOf(
 fun OnboardingScreen(onDone: () -> Unit) {
     val colors = Lumora.colors
     val type = Lumora.type
-    val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGES.size })
+    // Built once per composition: the preset count comes from the real
+    // built-in list so the tour copy can never go stale.
+    val pages = remember { onboardingPages(Presets.builtIn().size) }
+    val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
-    val lastPage = pagerState.currentPage == ONBOARDING_PAGES.size - 1
+    val lastPage = pagerState.currentPage == pages.size - 1
 
     Column(
         modifier = Modifier.fillMaxSize().background(colors.background)
             .semantics {
                 contentDescription =
-                    "Welcome tour, page ${pagerState.currentPage + 1} of ${ONBOARDING_PAGES.size}"
+                    "Welcome tour, page ${pagerState.currentPage + 1} of ${pages.size}"
             },
     ) {
         // Skip — always available, never traps the user.
@@ -105,7 +112,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) { index ->
-            val page = ONBOARDING_PAGES[index]
+            val page = pages[index]
             Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -150,7 +157,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                repeat(ONBOARDING_PAGES.size) { i ->
+                repeat(pages.size) { i ->
                     val selected = i == pagerState.currentPage
                     Box(
                         modifier = Modifier
