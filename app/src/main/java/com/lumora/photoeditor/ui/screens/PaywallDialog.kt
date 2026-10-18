@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +44,10 @@ fun PaywallDialog(
 ) {
     val colors = Lumora.colors
     val type = Lumora.type
-    val status = remember { store.status.value }
+    // Collected, not remember-cached: after activateKey() the store refreshes
+    // and the header/confirm label/key field must flip to Licensed immediately
+    // (same stale-snapshot class as the DetailPanel auto-denoise fix).
+    val status by store.status.collectAsState()
     val pro = isPro(status)
     var key by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -117,14 +121,17 @@ fun PaywallDialog(
                         placeholder = "XXXX-XXXX-XXXX-XXXX",
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (notice != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            notice!!,
-                            style = type.caption,
-                            color = if (noticeOk) colors.accent else colors.danger,
-                        )
-                    }
+                }
+                // Outside the !pro guard: on success the status flips to
+                // Licensed (key field hides) but the green confirmation
+                // must stay visible instead of flashing away.
+                if (notice != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        notice!!,
+                        style = type.caption,
+                        color = if (noticeOk) colors.accent else colors.danger,
+                    )
                 }
             }
         },
