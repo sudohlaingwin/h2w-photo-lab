@@ -356,13 +356,26 @@ object ImageMath {
         val w = 256
         val h = (256f * source.height / source.width).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(source, w, h, true)
-        val px = IntArray(w * h)
-        small.getPixels(px, 0, w, 0, 0, w, h)
-        small.recycle()
-        val m = luminanceRangeMask(px, w, h, lo, hi, feather)
-        val out = IntArray(w * h) { i -> m[i] shl 24 }
-        val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        return m1.copy(Bitmap.Config.ALPHA_8, false).also { m1.recycle() }
+        try {
+            val px = IntArray(w * h)
+            small.getPixels(px, 0, w, 0, 0, w, h)
+            val m = luminanceRangeMask(px, w, h, lo, hi, feather)
+            val out = IntArray(w * h) { i -> m[i] shl 24 }
+            val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+            try {
+                return m1.copy(Bitmap.Config.ALPHA_8, false)
+            } finally {
+                // copy() can throw (OOM on the ALPHA_8 raster);
+                // never leave the scratch bitmap behind.
+                m1.recycle()
+            }
+        } finally {
+            // IntArray(getPixels' target) OOMs, getPixels throws, or a later
+            // alloc fails: none may leak `small`. The !== guard mirrors
+            // meanLuma/selectSkyAuto — createScaledBitmap can return the
+            // source itself when sizes match, and that is caller-owned.
+            if (small !== source) small.recycle()
+        }
     }
 
     /**
@@ -461,13 +474,25 @@ object ImageMath {
         val w = 256
         val h = (256f * source.height / source.width).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(source, w, h, true)
-        val px = IntArray(w * h)
-        small.getPixels(px, 0, w, 0, 0, w, h)
-        small.recycle()
-        val m = depthRangeMask(px, w, h, lo, hi, feather)
-        val out = IntArray(w * h) { i -> m[i] shl 24 }
-        val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        return m1.copy(Bitmap.Config.ALPHA_8, false).also { m1.recycle() }
+        try {
+            val px = IntArray(w * h)
+            small.getPixels(px, 0, w, 0, 0, w, h)
+            val m = depthRangeMask(px, w, h, lo, hi, feather)
+            val out = IntArray(w * h) { i -> m[i] shl 24 }
+            val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+            try {
+                return m1.copy(Bitmap.Config.ALPHA_8, false)
+            } finally {
+                // copy() can throw (OOM on the ALPHA_8 raster);
+                // never leave the scratch bitmap behind.
+                m1.recycle()
+            }
+        } finally {
+            // IntArray OOM, getPixels throw, or copy() throw: none may leak
+            // `small`. The !== guard mirrors selectSkyAuto — the downscale
+            // can return the caller-owned source when sizes match.
+            if (small !== source) small.recycle()
+        }
     }
 
     /**
@@ -574,12 +599,24 @@ object ImageMath {
         val w = 256
         val h = (256f * source.height / source.width).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(source, w, h, true)
-        val px = IntArray(w * h)
-        small.getPixels(px, 0, w, 0, 0, w, h)
-        small.recycle()
-        val m = colorRangeMaskSamples(px, w, h, samples, tolerance, feather)
-        val out = IntArray(w * h) { i -> m[i] shl 24 }
-        val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-        return m1.copy(Bitmap.Config.ALPHA_8, false).also { m1.recycle() }
+        try {
+            val px = IntArray(w * h)
+            small.getPixels(px, 0, w, 0, 0, w, h)
+            val m = colorRangeMaskSamples(px, w, h, samples, tolerance, feather)
+            val out = IntArray(w * h) { i -> m[i] shl 24 }
+            val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+            try {
+                return m1.copy(Bitmap.Config.ALPHA_8, false)
+            } finally {
+                // copy() can throw (OOM on the ALPHA_8 raster);
+                // never leave the scratch bitmap behind.
+                m1.recycle()
+            }
+        } finally {
+            // IntArray OOM, getPixels throw, or copy() throw: none may leak
+            // `small`. The !== guard mirrors selectSkyAuto — the downscale
+            // can return the caller-owned source when sizes match.
+            if (small !== source) small.recycle()
+        }
     }
 }
