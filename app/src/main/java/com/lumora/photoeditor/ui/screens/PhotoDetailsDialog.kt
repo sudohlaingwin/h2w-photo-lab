@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +41,7 @@ import com.lumora.photoeditor.data.PhotoDetails
 import com.lumora.photoeditor.data.loadPhotoDetails
 import com.lumora.photoeditor.ui.components.ShimmerBox
 import com.lumora.photoeditor.ui.components.LumoraBottomSheet
+import com.lumora.photoeditor.ui.components.LumoraIconButton
 import com.lumora.photoeditor.ui.components.LumoraTextField
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
@@ -204,17 +204,17 @@ private fun KeywordEditor(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        IconButton(
+                        // 48dp minimum hit area (LumoraIconButton default): the old
+                        // 28.dp IconButton was below the platform touch-target
+                        // minimum. The visual glyph stays 16dp; only the
+                        // tappable region grows to the platform minimum.
+                        LumoraIconButton(
+                            icon = Icons.Default.Close,
+                            contentDescription = "Remove keyword $kw",
                             onClick = { onRemove(kw) },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Remove keyword $kw",
-                                tint = colors.textSecondary,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
+                            tint = colors.textSecondary,
+                            iconSize = 16.dp,
+                        )
                     }
                 }
             }
