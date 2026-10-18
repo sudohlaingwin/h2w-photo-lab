@@ -48,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,9 +73,11 @@ fun SettingsScreen(
         cacheSize = withContext(Dispatchers.IO) {
             val bytes = container.context.cacheDir.walkTopDown().filter { it.isFile }
                 .sumOf { it.length() }
+            // Locale.US: machine-style size readout — a bare "%.1f" would
+            // render "1,2 MB" on comma-decimal locales (his Burmese-UI vivo).
             when {
-                bytes > 1_000_000 -> "%.1f MB".format(bytes / 1_000_000.0)
-                bytes > 1_000 -> "%.0f KB".format(bytes / 1_000.0)
+                bytes > 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+                bytes > 1_000 -> String.format(Locale.US, "%.0f KB", bytes / 1_000.0)
                 else -> "$bytes B"
             }
         }

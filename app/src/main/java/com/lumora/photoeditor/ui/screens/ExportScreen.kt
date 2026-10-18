@@ -47,6 +47,7 @@ import com.lumora.photoeditor.ui.state.ExportUiState
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import java.io.File
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -410,10 +411,12 @@ private suspend fun readExportFileInfo(context: Context, uri: Uri): ExportFileIn
         }
     }
 
+// Locale.US throughout: a bare "%.1f" follows the device default locale
+// and would render "12,4 MB" on comma-decimal locales (his Burmese-UI vivo).
 private fun formatFileSize(bytes: Long): String = when {
     bytes < 0 -> ""
-    bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576f)
-    bytes >= 1024 -> "%.0f KB".format(bytes / 1024f)
+    bytes >= 1_048_576 -> String.format(Locale.US, "%.1f MB", bytes / 1_048_576f)
+    bytes >= 1024 -> String.format(Locale.US, "%.0f KB", bytes / 1024f)
     else -> "$bytes B"
 }
 

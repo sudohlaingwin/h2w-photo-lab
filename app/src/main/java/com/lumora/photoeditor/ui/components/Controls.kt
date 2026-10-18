@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -406,7 +407,11 @@ fun LumoraCompactSlider(
 fun formatValue(value: Float, range: ClosedFloatingPointRange<Float>): String {
     val span = range.endInclusive - range.start
     return if (span > 20f) value.roundToInt().toString()
-    else String.format("%.2f", value)
+    // Explicit Locale.US: String.format follows the device default locale,
+    // and on locales with a comma decimal separator (e.g. his Burmese-UI
+    // vivo) a bare "%.2f" would render "1,50" in every slider readout.
+    // These are machine-style readouts, not prose — always dot decimals.
+    else String.format(Locale.US, "%.2f", value)
 }
 
 /**

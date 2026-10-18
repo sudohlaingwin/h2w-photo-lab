@@ -51,6 +51,7 @@ import com.lumora.photoeditor.ui.components.LumoraTextField
 import com.lumora.photoeditor.ui.components.LumoraTextButton
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
+import java.util.Locale
 
 /**
  * AI Photo Assistant panel: chat with Gemini about the current photo.
@@ -444,7 +445,9 @@ private fun SuggestionCard(
 }
 
 private fun formatFloat(v: Float): String =
-    (if (v > 0) "+" else "") + "%.2f".format(v)
+    // Locale.US: a bare "%.2f" follows the device locale and would render
+    // "+1,50" on comma-decimal locales (his Burmese-UI vivo).
+    (if (v > 0) "+" else "") + String.format(Locale.US, "%.2f", v)
 
 private fun formatInt(v: Float): String {
     val i = v.toInt()
