@@ -107,6 +107,14 @@ fun RetouchPanel(
             )
         }
         if (aiRetouch.enabled) {
+            // Pin the AI-chosen strength as the double-tap / TalkBack reset
+            // target. Keyed on `enabled`, NOT on the live strength: the old
+            // code passed aiRetouch.strength itself as `default`, but that
+            // value tracks every drag, so `resettable` (value != default)
+            // was always false — double-tap reset and the TalkBack "Reset
+            // Intensity to default" action were silently no-ops, and the
+            // pill never showed its modified accent tint.
+            val aiChosenStrength = remember(aiRetouch.enabled) { aiRetouch.strength }
             var aiStrength by remember(aiRetouch.strength) {
                 mutableStateOf(aiRetouch.strength)
             }
@@ -124,7 +132,7 @@ fun RetouchPanel(
                     vm.setAiProRetouchStrength(it)
                 },
                 valueRange = 0f..1f,
-                default = aiRetouch.strength,
+                default = aiChosenStrength,
                 valueText = "${(aiStrength * 100).toInt()}%",
                 onBegin = { vm.beginGesture() },
                 onEnd = { vm.endGesture("AI Pro Retouch intensity") },
