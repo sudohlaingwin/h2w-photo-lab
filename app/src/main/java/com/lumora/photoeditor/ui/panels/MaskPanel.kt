@@ -184,6 +184,22 @@ fun MaskPanel(
                     onSelect = { vm.setMaskViewMode(it) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // Overlay opacity (Lightroom parity): the fixed 55% red can
+                // hide the photo while refining fine edges (hair, sky), or be
+                // too faint on bright scenes — let the user dial it. Shown
+                // only when an overlay is actually visible.
+                if (maskView != 0) {
+                    val overlayAlpha by vm.maskOverlayAlpha.collectAsState()
+                    Spacer(Modifier.height(2.dp))
+                    com.lumora.photoeditor.ui.components.LumoraSlider(
+                        label = "Overlay",
+                        value = overlayAlpha * 100f,
+                        valueRange = 5f..100f,
+                        default = 55f,
+                        onValueChange = { v -> vm.setMaskOverlayAlpha(v / 100f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             MaskEditor(
                 vm = vm,

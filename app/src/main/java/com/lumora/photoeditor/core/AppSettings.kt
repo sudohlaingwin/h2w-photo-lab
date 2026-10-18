@@ -178,8 +178,19 @@ class AppSettings(context: Context) {
         _showMaskOverlay.value = m != 0
     }
 
-    private fun loadMaskViewMode(): Int {
-        if (prefs.contains("mask_view_mode")) {
+    /** Mask overlay opacity (red / B&W mask view): 0.05 = barely visible,
+     *  1 = fully opaque. Persisted like the view mode. */
+    private val _maskOverlayAlpha = MutableStateFlow(
+        prefs.getFloat("mask_overlay_alpha", 0.55f).coerceIn(0.05f, 1f))
+    val maskOverlayAlpha: StateFlow<Float> = _maskOverlayAlpha.asStateFlow()
+
+    fun setMaskOverlayAlpha(v: Float) {
+        val a = v.coerceIn(0.05f, 1f)
+        prefs.edit().putFloat("mask_overlay_alpha", a).apply()
+        _maskOverlayAlpha.value = a
+    }
+
+    private fun loadMaskViewMode(): Int {        if (prefs.contains("mask_view_mode")) {
             return prefs.getInt("mask_view_mode", 1).coerceIn(0, 2)
         }
         val m = if (prefs.getBoolean("mask_overlay", true)) 1 else 0

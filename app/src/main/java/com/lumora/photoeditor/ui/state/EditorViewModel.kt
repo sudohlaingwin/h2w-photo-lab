@@ -63,6 +63,8 @@ data class PendingFrame(
     val overlayMaskIndex: Int,
     /** Mask view mode for the overlay: 0 = red tint, 1 = black & white. */
     val maskViewMode: Int = 0,
+    /** Mask overlay opacity (red/B&W view), 0.05..1. */
+    val overlayAlpha: Float = 0.55f,
     val timeSec: Float,
     val frameId: Long,
     /** Bump to force the GL thread to re-upload all GPU assets. */
@@ -1502,6 +1504,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 clipMode = _clipMode.value,
                 overlayMaskIndex = overlayMaskIndex,
                 maskViewMode = maskViewMode,
+                overlayAlpha = container.settings.maskOverlayAlpha.value,
                 timeSec = (System.currentTimeMillis() % 100000) / 1000f,
                 frameId = ++frameId,
                 assetsToken = assetsToken,
@@ -1723,6 +1726,15 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setMaskViewMode(mode: Int) {
         container.settings.setMaskViewMode(mode)
+        requestRender()
+    }
+
+    /** Mask overlay opacity (red/B&W view), persisted. Changing it
+     *  re-renders immediately so it works while painting. */
+    val maskOverlayAlpha: StateFlow<Float> = container.settings.maskOverlayAlpha
+
+    fun setMaskOverlayAlpha(alpha: Float) {
+        container.settings.setMaskOverlayAlpha(alpha)
         requestRender()
     }
 

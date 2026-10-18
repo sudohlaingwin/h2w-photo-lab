@@ -1155,7 +1155,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
         val opts = GlEngine.FrameOptions(
             clipMode = frame?.clipMode ?: 0,
             overlayMask = frame?.overlayMaskIndex ?: -1,
-            overlayAlpha = 0.55f,
+            overlayAlpha = frame?.overlayAlpha ?: 0.55f,
             maskViewMode = frame?.maskViewMode ?: 0,
             timeSec = 0f,
         )
@@ -1775,6 +1775,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                 GlEngine.FrameOptions(
                     clipMode = frame.clipMode,
                     overlayMask = frame.overlayMaskIndex,
+                    overlayAlpha = frame.overlayAlpha,
                     maskViewMode = frame.maskViewMode,
                     timeSec = frame.timeSec,
                     splitX = frame.splitX,
