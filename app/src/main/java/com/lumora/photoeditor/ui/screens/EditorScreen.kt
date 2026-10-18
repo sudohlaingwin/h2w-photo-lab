@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1702,24 +1703,66 @@ private fun ToolNav(
     onSelect: (Tool) -> Unit,
 ) {
     val colors = Lumora.colors
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .background(colors.background)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    val scroll = rememberScrollState()
+    // The strip holds 9 tools at 64dp; on narrow phones the last tools
+    // (Crop, Retouch, Presets) start off-screen with nothing saying the
+    // strip scrolls. Edge fades that track scroll position make the
+    // overflow discoverable, Lightroom-style.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.background),
     ) {
-        Tool.values().forEach { t ->
-            ToolTile(
-                label = t.label,
-                selected = selected == t,
-                dot = toolHasEdits(t, state),
-                onClick = { onSelect(t) },
-                modifier = Modifier.width(64.dp),
-                icon = {
-                    Icon(t.icon, t.label, modifier = Modifier.size(22.dp),
-                        tint = if (selected == t) colors.accent else colors.textSecondary)
-                },
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .horizontalScroll(scroll)
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Tool.values().forEach { t ->
+                ToolTile(
+                    label = t.label,
+                    selected = selected == t,
+                    dot = toolHasEdits(t, state),
+                    onClick = { onSelect(t) },
+                    modifier = Modifier.width(64.dp),
+                    icon = {
+                        Icon(t.icon, t.label, modifier = Modifier.size(22.dp),
+                            tint = if (selected == t) colors.accent else colors.textSecondary)
+                    },
+                )
+            }
+        }
+        val canScrollBack = scroll.value > 0
+        val canScrollForward = scroll.value < scroll.maxValue
+        // Reading scroll.value in composition subscribes the fades, so
+        // they appear and disappear as the strip scrolls.
+        if (canScrollBack) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(32.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to colors.background,
+                            1f to colors.background.copy(alpha = 0f),
+                        ),
+                    ),
+            )
+        }
+        if (canScrollForward) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(32.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to colors.background.copy(alpha = 0f),
+                            1f to colors.background,
+                        ),
+                    ),
             )
         }
     }
