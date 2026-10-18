@@ -1030,6 +1030,13 @@ fun EmptyState(
      */
     compact: Boolean = false,
     modifier: Modifier = Modifier,
+    /**
+     * Optional raw technical detail, rendered as a dimmed caption under the
+     * action button — the UX-honesty pattern (friendly headline + plain
+     * subline + diagnosable detail) shared with the GL preview fallback.
+     * Null (the default) renders nothing, so existing callers are unchanged.
+     */
+    details: String? = null,
 ) {
     val colors = Lumora.colors
     val type = Lumora.type
@@ -1069,6 +1076,15 @@ fun EmptyState(
                     containerColor = colors.accent, contentColor = Color.Black),
                 shape = RoundedCornerShape(10.dp),
             ) { Text(actionLabel) }
+        }
+        if (details != null) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Details: $details",
+                style = type.caption,
+                color = colors.textTertiary,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }

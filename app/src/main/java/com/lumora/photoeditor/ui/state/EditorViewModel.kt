@@ -23,6 +23,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileNotFoundException
 import java.util.UUID
 
 data class Histogram(
@@ -223,6 +224,16 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
+
+    /**
+     * Raw technical detail behind [_error], when the failure message itself
+     * is exception jargon. Shown as a dimmed "Details:" caption under the
+     * friendly message (same UX-honesty pattern as the GL preview fallback),
+     * so the screen never dumps a raw stack-trace line at the user while
+     * staying diagnosable. Null when there is nothing technical to show.
+     */
+    private val _errorDetail = MutableStateFlow<String?>(null)
+    val errorDetail = _errorDetail.asStateFlow()
 
     private val _state = MutableStateFlow(EditState())
     val state = _state.asStateFlow()
@@ -523,6 +534,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         _imageId.value = imageId
         _loading.value = true
         _error.value = null
+        _errorDetail.value = null
         _embeddedPreviewFormat.value = null
         guardLaunch {
             try {
@@ -599,14 +611,42 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 // thread (huge panoramas on low-RAM phones) — same graceful
                 // pattern as ExportManager.
                 if (t is CancellationException) throw t
-                _error.value = if (t is OutOfMemoryError)
-                    "Not enough memory to open this photo — try closing other apps and retry"
-                else t.message ?: "Failed to open photo"
+                // UX honesty: the screen used to show t.message verbatim,
+                // which for decode/IO failures is exception jargon
+                // ("java.io.FileNotFoundException: ..."). Classify into a
+                // plain-language message; keep the raw text as the dimmed
+                // Details caption only when it is actually technical.
+                // A message that is already plain language is shown as-is,
+                // so no information is lost in the common readable case.
+                val raw = t.message?.takeIf { it.isNotBlank() }
+                val technical = raw?.takeIf { looksTechnical(it) }?.take(220)
+                _error.value = when {
+                    t is OutOfMemoryError ->
+                        "Not enough memory to open this photo — try closing other apps and retry"
+                    technical == null -> raw ?: "Failed to open photo"
+                    t is FileNotFoundException ->
+                        "This photo's file couldn't be found — it may have been moved or deleted."
+                    t is SecurityException ->
+                        "The app can't access this photo — its permission may have been revoked."
+                    else ->
+                        "This photo couldn't be opened. It may be corrupt or in a format the app can't read."
+                }
+                _errorDetail.value = technical
             } finally {
                 _loading.value = false
             }
         }
     }
+
+    /**
+     * True when a throwable's message reads as exception jargon rather than
+     * something a user can act on — class names, package prefixes, or a
+     * multi-line stack trace. Such messages belong in the dimmed Details
+     * caption, never as the headline body.
+     */
+    private fun looksTechnical(msg: String): Boolean =
+        msg.contains("Exception") || msg.contains("Error") ||
+            msg.contains('\n') || msg.contains("java.") || msg.contains("android.")
 
     private fun decodePreview(uri: Uri, maxDim: Int = 2048): Bitmap? {
         // RAW program Phase 1 slice 2 / Phase 2 slice 1: RAW files cannot go

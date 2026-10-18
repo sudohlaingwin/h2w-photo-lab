@@ -115,6 +115,9 @@ fun EditorScreen(
     val state by vm.state.collectAsState()
     val loading by vm.loading.collectAsState()
     val error by vm.error.collectAsState()
+    // Raw technical detail behind `error` (null unless the failure message
+    // was exception jargon); shown as the dimmed Details caption.
+    val errorDetail by vm.errorDetail.collectAsState()
     val canUndo by vm.canUndo.collectAsState()
     val canRedo by vm.canRedo.collectAsState()
     val showRetouchSpots by vm.showRetouchSpots.collectAsState()
@@ -407,6 +410,7 @@ fun EditorScreen(
                 error != null -> EmptyState(
                     title = "Couldn't open this photo",
                     body = error ?: "",
+                    details = errorDetail,
                     actionLabel = "Back to library",
                     onAction = onBack,
                     icon = LumoraIcons.Error,
