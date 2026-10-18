@@ -895,15 +895,19 @@ fun EditorScreen(
                                 .background(colors.divider),
                         )
                     }
-                    // Animated tool switch: a short crossfade keeps panel
+                    // Animated tool switch: a short sequential fade keeps panel
                     // changes from flashing, matching Lightroom Mobile's
-                    // panel transitions. Fade only (no size transform) so
-                    // the GL preview above never re-lays-out mid-gesture.
+                    // panel transitions. Sequential (out fades fully before
+                    // in starts) rather than a crossfade: on-device video
+                    // review caught the outgoing panel's text (e.g. Mask's
+                    // "No masks yet...") ghosting over the incoming panel
+                    // mid-crossfade. Fade only (no size transform) so the GL
+                    // preview above never re-lays-out mid-gesture.
                     AnimatedContent(
                         targetState = tool,
                         transitionSpec = {
-                            fadeIn(animationSpec = tween(220)) togetherWith
-                                fadeOut(animationSpec = tween(160))
+                            fadeIn(animationSpec = tween(160, delayMillis = 120)) togetherWith
+                                fadeOut(animationSpec = tween(120))
                         },
                         label = "toolPanel",
                         modifier = Modifier.semantics {

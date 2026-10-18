@@ -179,10 +179,24 @@ class AppSettings(context: Context) {
     }
 
     /** Mask overlay opacity (red / B&W mask view): 0.05 = barely visible,
-     *  1 = fully opaque. Persisted like the view mode. */
+     *  1 = fully opaque. Persisted like the view mode.
+     *
+     *  2026-10-18: the old 0.55 default hid the photo while refining fine
+     *  edges (on-device video review: "far too opaque"), so the default is
+     *  now 0.35. One-time migration: installs still sitting on the untouched
+     *  old default move to 0.35; anyone who deliberately moved the slider
+     *  keeps their own value. */
     private val _maskOverlayAlpha = MutableStateFlow(
-        prefs.getFloat("mask_overlay_alpha", 0.55f).coerceIn(0.05f, 1f))
+        migrateOverlayAlpha(prefs.getFloat("mask_overlay_alpha", -1f)).coerceIn(0.05f, 1f))
     val maskOverlayAlpha: StateFlow<Float> = _maskOverlayAlpha.asStateFlow()
+
+    private fun migrateOverlayAlpha(stored: Float): Float {
+        // -1 = never set; exactly 0.55 = the pre-2026-10-18 default, never
+        // touched by the user (we only ever wrote the slider value verbatim).
+        val migrated = if (stored < 0f || stored == 0.55f) 0.35f else stored
+        if (migrated != stored) prefs.edit().putFloat("mask_overlay_alpha", migrated).apply()
+        return migrated
+    }
 
     fun setMaskOverlayAlpha(v: Float) {
         val a = v.coerceIn(0.05f, 1f)

@@ -80,7 +80,10 @@ fun ColorPanel(
         PanelSection("Black & white") {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                // Top-aligned, not centered: the caption wraps to two lines
+                // on narrow phones, and a centered switch lands mid-row and
+                // overlaps the wrapped second line (on-device video review).
+                verticalAlignment = Alignment.Top,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Black & white", style = Lumora.type.body,
@@ -96,6 +99,7 @@ fun ColorPanel(
                         }
                     },
                     contentDescription = "Black & white",
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
             if (c.bw) {

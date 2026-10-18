@@ -220,8 +220,8 @@ fun MaskPanel(
                     onSelect = { vm.setMaskViewMode(it) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                // Overlay opacity (Lightroom parity): the fixed 55% red can
-                // hide the photo while refining fine edges (hair, sky), or be
+                // Overlay opacity (Lightroom parity): the old 55% default red
+                // hid the photo while refining fine edges (hair, sky), or was
                 // too faint on bright scenes — let the user dial it. Shown
                 // only when an overlay is actually visible.
                 if (maskView != 0) {
@@ -231,7 +231,7 @@ fun MaskPanel(
                         label = "Overlay",
                         value = overlayAlpha * 100f,
                         valueRange = 5f..100f,
-                        default = 55f,
+                        default = 35f,
                         onValueChange = { v -> vm.setMaskOverlayAlpha(v / 100f) },
                         modifier = Modifier.fillMaxWidth(),
                     )

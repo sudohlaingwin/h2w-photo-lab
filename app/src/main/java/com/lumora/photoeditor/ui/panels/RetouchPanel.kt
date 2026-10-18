@@ -295,8 +295,10 @@ fun RetouchPanel(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                // Plain text (was a 🌊 emoji glyph).
-                "Wavelet Skin (pro)",
+                // Plain text (was a 🌊 emoji glyph). No parentheses: the
+                // vivo V60's system font renders ")" as a full-width glyph,
+                // which reads as a rendering glitch (on-device video review).
+                "Wavelet Skin pro",
                 style = Lumora.type.controlLabel,
                 color = Lumora.colors.textPrimary,
             )

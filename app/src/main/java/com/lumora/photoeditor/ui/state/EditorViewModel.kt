@@ -1999,7 +1999,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 // "Background AI" selects everything that is NOT the subject:
                 // the same stored raster, inverted shader-side (the mask
                 // pipeline already supports inversion — see the Auto Mask
-                // "Background (auto)" plan below).
+                // "Background auto" plan below).
                 val inverted = kind == MaskType.AI_BACKGROUND
                 updateMask(maskId, "AI mask") { m ->
                     m.copy(
@@ -3603,7 +3603,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /** Creates a skin-softening mask for portraits (called by Pro Auto). */
     private fun applyAutoSkinMask(repinBaseline: EditState? = null) {
         // Dedupe: re-tapping Pro Auto must not stack a second
-        // "Skin soften (pro)" mask, and two rapid taps must not both pass
+        // "Skin soften pro" mask, and two rapid taps must not both pass
         // the check before either commits (in-flight claim).
         if (_state.value.masks.any { m ->
                 m.components.any { it.type == MaskType.AI_SKIN }
@@ -3656,7 +3656,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         )
                         val mask = Mask(
                             id = maskId,
-                            name = "Skin soften (pro)",
+                            name = "Skin soften pro",
                             components = listOf(skinComp),
                             adjust = LocalAdjust(
                                 clarity = -35f,
@@ -3898,7 +3898,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     )
                     skinMaskToAdd = Mask(
                         id = UUID.randomUUID().toString(),
-                        name = "Skin soften (auto)",
+                        name = "Skin soften auto",
                         components = listOf(skinComp),
                         adjust = LocalAdjust(
                             clarity = recipe.skinClarity,
@@ -4514,7 +4514,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         }
                         // Background = everything that is NOT the subject:
                         // measure the real backdrop pixels (inverted skin
-                        // raster) so the Background (auto) smart-fix reacts to
+                        // raster) so the Background auto smart-fix reacts to
                         // the actual scene instead of a brightness estimate.
                         // Null on failure — the caller falls back to the
                         // rough estimate below.
@@ -4531,7 +4531,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         }
                         subjectBrightness = stats.brightness
                         toCreate.add(MaskPlan(
-                            "Skin (auto)", MaskType.AI_SKIN, skinBmp,
+                            "Skin auto", MaskType.AI_SKIN, skinBmp,
                             SmartMask.skinFix(stats, recipe),
                             stats.brightness,
                             bgStats,
@@ -4566,7 +4566,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                             }
                             subjectBrightness = stats.brightness
                             toCreate.add(MaskPlan(
-                                "Subject (auto)", MaskType.AI_SUBJECT, subjBmp,
+                                "Subject auto", MaskType.AI_SUBJECT, subjBmp,
                                 SmartMask.subjectFix(stats),
                                 stats.brightness,
                                 bgStats,
@@ -4584,7 +4584,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                             SmartMask.RegionStats(0.6f, 0.3f, 0.4f)
                         }
                         toCreate.add(MaskPlan(
-                            "Sky (auto)", MaskType.SKY_SELECT, skyBmp,
+                            "Sky auto", MaskType.SKY_SELECT, skyBmp,
                             SmartMask.skyFix(stats),
                             stats.brightness,
                         ))
@@ -4649,7 +4649,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         )
                         val bgMask = Mask(
                             id = UUID.randomUUID().toString(),
-                            name = "Background (auto)",
+                            name = "Background auto",
                             inverted = true,
                             components = listOf(
                                 MaskComponent(
@@ -4662,10 +4662,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                             adjust = SmartMask.backgroundFix(bgStats, subjectBrightness),
                             revision = System.nanoTime(),
                         )
-                        update("Auto mask: Background (auto)") { s ->
+                        update("Auto mask: Background auto") { s ->
                             s.copy(masks = s.masks + bgMask)
                         }
-                        names.add("Background (auto)")
+                        names.add("Background auto")
                     }
                 }
                 if (names.isNotEmpty()) requestRender()
