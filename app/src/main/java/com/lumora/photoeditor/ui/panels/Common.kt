@@ -28,12 +28,14 @@ fun ParamSlider(
     value: Float,
     range: ClosedFloatingPointRange<Float> = -100f..100f,
     historyLabel: String = label,
+    default: Float = 0f,
     update: (EditState, Float) -> EditState,
 ) {
     LumoraSlider(
         label = label,
         value = value,
         valueRange = range,
+        default = default,
         onBegin = { vm.beginGesture() },
         onValueChange = { v -> vm.update(gesture = true) { s -> update(s, v) } },
         onEnd = { vm.endGesture(historyLabel) },
