@@ -18,6 +18,8 @@ import com.lumora.photoeditor.data.keywordKeyOf
 import com.lumora.photoeditor.data.normalizeKeyword
 import com.lumora.photoeditor.engine.Preset
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -43,8 +45,26 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     private val _candidates = MutableStateFlow<List<ImportCandidate>>(emptyList())
     val candidates = _candidates.asStateFlow()
 
+    /**
+     * Uniform crash guard for every fire-and-forget library job (crash-risk
+     * hardening cycle). An uncaught throw inside any viewModelScope child
+     * cancels the whole scope — potentially taking down the app — so every
+     * launch in this ViewModel goes through here: a pathological Room/file
+     * throw is warn-logged and the scope survives. Callers that need a
+     * result keep their own try/catch around the repository call; this is
+     * the backstop for the ones that can't recover. Cancellation is never
+     * swallowed (CoroutineExceptionHandler ignores CancellationException
+     * by contract).
+     */
+    private val scopeGuard = CoroutineExceptionHandler { _, t ->
+        Log.w("LibraryViewModel", "library job failed", t)
+    }
+
+    private fun guardLaunch(block: suspend CoroutineScope.() -> Unit) =
+        viewModelScope.launch(scopeGuard, block = block)
+
     init {
-        viewModelScope.launch {
+        guardLaunch {
             container.library.setSortOrder(_sortOrder.value)
             container.library.refresh()
         }
@@ -53,7 +73,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         // existed. Runs once per process on IO, never blocks the grid — the
         // cells recompose when thumbRevision bumps and pick up the new
         // thumbnails without a manual refresh. Never throws.
-        viewModelScope.launch {
+        guardLaunch {
             val cached = try {
                 withContext(Dispatchers.IO) { container.library.backfillRawThumbs() }
             } catch (_: Exception) {
@@ -67,7 +87,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         if (_sortOrder.value == order) return
         _sortOrder.value = order
         container.settings.librarySortOrderName = order.name
-        viewModelScope.launch { container.library.setSortOrder(order) }
+        guardLaunch { container.library.setSortOrder(order) }
     }
 
     /** Library grid density (2..5 columns); persisted in AppSettings. */
@@ -78,7 +98,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun setFilter(f: LibraryFilter) {
         if (_filter.value == f) return
         _filter.value = f
-        viewModelScope.launch { container.library.setFilter(f) }
+        guardLaunch { container.library.setFilter(f) }
     }
 
     /**
@@ -101,15 +121,15 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         }
         if (_keywordFilter.value == key) return
         _keywordFilter.value = key
-        viewModelScope.launch { container.library.setKeywordFilter(keyword) }
+        guardLaunch { container.library.setKeywordFilter(keyword) }
     }
 
     fun addKeyword(imageId: String, raw: String) {
-        viewModelScope.launch { container.library.addKeyword(imageId, raw) }
+        guardLaunch { container.library.addKeyword(imageId, raw) }
     }
 
     fun removeKeyword(imageId: String, keyword: String) {
-        viewModelScope.launch { container.library.removeKeyword(imageId, keyword) }
+        guardLaunch { container.library.removeKeyword(imageId, keyword) }
     }
 
     /**
@@ -126,7 +146,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun setSmartCollection(id: String?) {
         if (_activeSmartCollectionId.value == id) return
         _activeSmartCollectionId.value = id
-        viewModelScope.launch { container.library.setSmartCollectionId(id) }
+        guardLaunch { container.library.setSmartCollectionId(id) }
     }
 
     fun createSmartCollection(
@@ -136,7 +156,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         favoritesOnly: Boolean,
         onDone: (Boolean) -> Unit,
     ) {
-        viewModelScope.launch {
+        guardLaunch {
             val ok = try {
                 container.library.createSmartCollection(
                     name, keyword, minRating, favoritesOnly)
@@ -156,7 +176,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         favoritesOnly: Boolean,
         onDone: (Boolean) -> Unit,
     ) {
-        viewModelScope.launch {
+        guardLaunch {
             val ok = try {
                 container.library.updateSmartCollection(
                     id, name, keyword, minRating, favoritesOnly)
@@ -169,7 +189,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteSmartCollection(id: String) {
-        viewModelScope.launch {
+        guardLaunch {
             val removed = try {
                 container.library.deleteSmartCollection(id)
             } catch (t: Throwable) {
@@ -199,7 +219,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun setGallery(id: String?) {
         if (_activeGalleryId.value == id) return
         _activeGalleryId.value = id
-        viewModelScope.launch { container.library.setGalleryId(id) }
+        guardLaunch { container.library.setGalleryId(id) }
     }
 
     fun createProofingGallery(
@@ -208,7 +228,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         photoIds: List<String>,
         onDone: (ProofingGallery?) -> Unit,
     ) {
-        viewModelScope.launch {
+        guardLaunch {
             val gallery = try {
                 container.library.createProofingGallery(name, clientName, photoIds)
             } catch (t: Throwable) {
@@ -217,7 +237,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
             }
             if (gallery != null) {
                 _activeGalleryId.value = gallery.id
-                viewModelScope.launch { container.library.setGalleryId(gallery.id) }
+                guardLaunch { container.library.setGalleryId(gallery.id) }
             }
             onDone(gallery)
         }
@@ -229,7 +249,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         clientName: String?,
         onDone: (Boolean) -> Unit,
     ) {
-        viewModelScope.launch {
+        guardLaunch {
             val ok = try {
                 container.library.updateProofingGallery(id, name, clientName)
             } catch (t: Throwable) {
@@ -241,7 +261,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteProofingGallery(id: String) {
-        viewModelScope.launch {
+        guardLaunch {
             val removed = try {
                 container.library.deleteProofingGallery(id)
             } catch (t: Throwable) {
@@ -254,7 +274,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun addPhotosToGallery(id: String, photoIds: Collection<String>, onDone: (Int) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             val n = try {
                 container.library.addPhotosToGallery(id, photoIds)
             } catch (t: Throwable) {
@@ -270,7 +290,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         photoIds: Collection<String>,
         onDone: (Int) -> Unit,
     ) {
-        viewModelScope.launch {
+        guardLaunch {
             val n = try {
                 container.library.removePhotosFromGallery(id, photoIds)
             } catch (t: Throwable) {
@@ -283,7 +303,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Cycles a gallery photo's client mark; the galleries flow drives the badges. */
     fun setProofMark(galleryId: String, photoId: String, mark: ProofMark?) {
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.library.setProofMark(galleryId, photoId, mark)
             } catch (t: Throwable) {
@@ -298,7 +318,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      * or null when the gallery is unknown.
      */
     fun applyClientPicks(galleryId: String, onDone: (ClientPicksResult?) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             val result = try {
                 container.library.applyClientPicks(galleryId)
             } catch (t: Throwable) {
@@ -311,17 +331,25 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
     fun search(q: String) {
         _query.value = q
-        viewModelScope.launch { container.library.search(q) }
+        guardLaunch { container.library.search(q) }
     }
 
     fun loadCandidates() {
-        viewModelScope.launch { _candidates.value = container.library.mediaStoreImages() }
+        guardLaunch { _candidates.value = container.library.mediaStoreImages() }
     }
 
     fun importUris(uris: List<Uri>, onDone: (Int) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             _importing.value = true
-            val n = container.library.importUris(uris)
+            // Previously unguarded: a pathological throw left _importing
+            // stuck true and never called onDone — now degrades to 0.
+            val n = try {
+                container.library.importUris(uris)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.w("LibraryViewModel", "importUris failed", t)
+                0
+            }
             _importing.value = false
             onDone(n)
         }
@@ -332,7 +360,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      * new library row ids in order; empty when nothing could be imported.
      */
     fun importSharedUris(uris: List<Uri>, onDone: (List<String>) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             _importing.value = true
             val ids = try {
                 container.library.importUrisWithIds(uris)
@@ -351,7 +379,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      * import failed. A bad capture can never crash the app.
      */
     fun importCameraPhoto(uri: Uri, onDone: (List<String>) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             _importing.value = true
             val ids = try {
                 container.library.importUrisWithIds(listOf(uri))
@@ -377,7 +405,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun mergeHdr(ids: List<String>, onDone: (String?) -> Unit) {
         val ordered = ids.toList()
         if (ordered.size < 2) { onDone(null); return }
-        viewModelScope.launch {
+        guardLaunch {
             _merging.value = true
             val newId = try {
                 container.library.mergeHdrFrames(ordered)
@@ -408,7 +436,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun focusStack(ids: List<String>, onDone: (String?) -> Unit) {
         val ordered = ids.toList()
         if (ordered.size < 2) { onDone(null); return }
-        viewModelScope.launch {
+        guardLaunch {
             _stacking.value = true
             val newId = try {
                 container.library.focusStackFrames(ordered)
@@ -435,7 +463,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     fun panorama(ids: List<String>, onDone: (String?) -> Unit) {
         val ordered = ids.toList()
         if (ordered.size < 2) { onDone(null); return }
-        viewModelScope.launch {
+        guardLaunch {
             _stitching.value = true
             val newId = try {
                 container.library.panoramaStitchFrames(ordered)
@@ -449,15 +477,15 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setRating(id: String, rating: Int) {
-        viewModelScope.launch { container.library.setRating(id, rating) }
+        guardLaunch { container.library.setRating(id, rating) }
     }
 
     fun toggleFavorite(id: String) {
-        viewModelScope.launch { container.library.toggleFavorite(id) }
+        guardLaunch { container.library.toggleFavorite(id) }
     }
 
     fun delete(id: String) {
-        viewModelScope.launch {
+        guardLaunch {
             try {
                 container.library.delete(id)
             } catch (t: Throwable) {
@@ -473,7 +501,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     /** Batch delete for multi-select; onDone receives the number removed. */
     fun deleteMany(ids: Set<String>, onDone: (Int) -> Unit) {
         if (ids.isEmpty()) { onDone(0); return }
-        viewModelScope.launch {
+        guardLaunch {
             val n = try { container.library.deleteMany(ids) } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 0
@@ -485,7 +513,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     /** Batch favorite for multi-select; onDone receives the number updated. */
     fun favoriteMany(ids: Set<String>, onDone: (Int) -> Unit) {
         if (ids.isEmpty()) { onDone(0); return }
-        viewModelScope.launch {
+        guardLaunch {
             val n = try { container.library.setFavoriteMany(ids, true) } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 0
@@ -510,7 +538,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         onDone: (Int) -> Unit,
     ) {
         if (ids.isEmpty()) { onDone(0); return }
-        viewModelScope.launch {
+        guardLaunch {
             var n = 0
             for (id in ids) {
                 try {
@@ -537,7 +565,18 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Creates a virtual copy of a library photo; onDone gets the new id or null. */
     fun duplicate(id: String, onDone: (String?) -> Unit) {
-        viewModelScope.launch { onDone(container.library.duplicateImage(id)) }
+        guardLaunch {
+            // Previously unguarded: a pathological Room/file throw crashed
+            // the app — now degrades to onDone(null).
+            val newId = try {
+                container.library.duplicateImage(id)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.w("LibraryViewModel", "duplicate failed for photo $id", t)
+                null
+            }
+            onDone(newId)
+        }
     }
 
     /**
@@ -547,7 +586,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun pasteEditsTo(imageId: String, onDone: (Boolean) -> Unit) {
         val raw = container.copiedEdits.value ?: run { onDone(false); return }
-        viewModelScope.launch {
+        guardLaunch {
             val ok = applyCopiedEdits(raw, imageId)
             // The sidecar changed behind the editor's back: any cached
             // edited thumbnail is now stale — bump so the grid re-checks.
@@ -563,7 +602,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun pasteEditsToMany(ids: Set<String>, onDone: (Int) -> Unit) {
         val raw = container.copiedEdits.value ?: run { onDone(0); return }
-        viewModelScope.launch {
+        guardLaunch {
             var n = 0
             for (id in ids) {
                 if (applyCopiedEdits(raw, id)) n++
@@ -585,7 +624,7 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      * success (a photo with no edits still copies a valid default state).
      */
     fun copyEditsFrom(imageId: String, onDone: (Boolean) -> Unit) {
-        viewModelScope.launch {
+        guardLaunch {
             val ok = try {
                 container.copiedEdits.value =
                     container.editStore.encode(container.editStore.load(imageId))
