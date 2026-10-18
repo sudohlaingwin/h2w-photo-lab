@@ -60,19 +60,14 @@ class GeminiClient {
             val body = json.encodeToString(GeminiRequest.serializer(), request)
 
             val (code, responseText, _) = postWithFallback(apiKey, body)
+            if (code == NO_HTTP_RESPONSE) {
+                return@withContext Result.Failure(
+                    "Network error: couldn't reach Gemini — check your connection and try again.")
+            }
             if (code !in 200..299) {
-                if (code == 429) {
-                    return@withContext Result.Failure(
-                        "Gemini API error: Quota exceeded (429) — your free quota is used up. " +
-                        "Check your plan at aistudio.google.com; free quota resets daily.")
-                }
-                val errMsg = try {
-                    val err = json.decodeFromString(GeminiResponse.serializer(), responseText)
-                    err.error?.message?.takeIf { it.isNotBlank() } ?: "HTTP $code"
-                } catch (_: Exception) {
-                    "HTTP $code"
-                }
-                return@withContext Result.Failure("Gemini API error: $errMsg")
+                // Never show the API's raw error message (video bug 2026-10-17:
+                // long JSON fragments clip mid-word and look like an app bug).
+                return@withContext Result.Failure("Gemini API error: ${friendlyGeminiHttpError(code)}")
             }
 
                 val response = json.decodeFromString(GeminiResponse.serializer(), responseText)
@@ -141,19 +136,13 @@ class GeminiClient {
             )
             val body = json.encodeToString(GeminiRequest.serializer(), request)
             val (code, responseText, _) = postWithFallback(apiKey, body)
+            if (code == NO_HTTP_RESPONSE) {
+                return@withContext Result.Failure(
+                    "Network error: couldn't reach Gemini — check your connection and try again.")
+            }
             if (code !in 200..299) {
-                if (code == 429) {
-                    return@withContext Result.Failure(
-                        "Gemini API error: Quota exceeded (429) — your free quota is used up. " +
-                        "Check your plan at aistudio.google.com; free quota resets daily.")
-                }
-                val errMsg = try {
-                    val err = json.decodeFromString(GeminiResponse.serializer(), responseText)
-                    err.error?.message?.takeIf { it.isNotBlank() } ?: "HTTP $code"
-                } catch (_: Exception) {
-                    "HTTP $code"
-                }
-                return@withContext Result.Failure("Gemini API error: $errMsg")
+                // Never show the API's raw error message — see analyzePhoto above.
+                return@withContext Result.Failure("Gemini API error: ${friendlyGeminiHttpError(code)}")
             }
                 val response = json.decodeFromString(GeminiResponse.serializer(), responseText)
                 val text = responseTextOf(response)
@@ -216,7 +205,10 @@ class GeminiClient {
                 conn.disconnect()
             }
         } catch (_: Exception) {
-            MODELS
+            // Cache the fallback too (matches the documented per-key session
+            // caching and the non-2xx path): when offline, the next assistant
+            // call must not re-run the 15s-timeout ListModels GET first.
+            MODELS.also { cachedModels = apiKey to it }
         }
         cachedModels = apiKey to discovered
         discovered
@@ -225,7 +217,10 @@ class GeminiClient {
     /**
      * POSTs to generateContent, trying each model in [MODELS] order.
      * Falls through on 404 (model deprecated/unavailable) to the next.
-     * Returns (httpCode, responseText, modelUsed).
+     * Returns (httpCode, responseText, modelUsed). When every attempt failed
+     * with a network exception and no HTTP response was received at all,
+     * httpCode is [NO_HTTP_RESPONSE] so callers report a network error
+     * instead of the misleading "HTTP 404".
      */
     private suspend fun postWithFallback(apiKey: String, body: String): Triple<Int, String, String> {
         // Discovered models first (what the key can actually use), hardcoded list as backup.
@@ -233,6 +228,7 @@ class GeminiClient {
         var lastCode = 404
         var lastText = ""
         var lastModel = models.first()
+        var gotHttpResponse = false
         for (model in models) {
             lastModel = model
             try {
@@ -250,6 +246,7 @@ class GeminiClient {
                         it.write(body)
                     }
                     val code = conn.responseCode
+                    gotHttpResponse = true
                     val stream = if (code in 200..299) conn.inputStream else conn.errorStream
                     val responseText = stream?.let { s ->
                         BufferedReader(InputStreamReader(s, StandardCharsets.UTF_8))
@@ -270,6 +267,7 @@ class GeminiClient {
                 lastText = e.message ?: "network error"
             }
         }
+        if (!gotHttpResponse) return Triple(NO_HTTP_RESPONSE, lastText, lastModel)
         return Triple(lastCode, lastText, lastModel)
     }
 
@@ -316,5 +314,12 @@ Respond with ONLY a JSON object matching this schema (no markdown, no extra text
         /** Per-key cache of discovered models for the session. */
         @Volatile
         private var cachedModels: Pair<String, List<String>>? = null
+
+        /**
+         * Returned as the httpCode of [postWithFallback] when every attempt
+         * failed with a network exception and no HTTP response was received
+         * at all. -1 cannot collide with a real HTTP status code.
+         */
+        internal const val NO_HTTP_RESPONSE = -1
     }
 }
