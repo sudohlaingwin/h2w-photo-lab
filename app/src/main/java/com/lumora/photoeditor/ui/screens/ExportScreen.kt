@@ -69,6 +69,13 @@ fun ExportScreen(
     // offer identical settings backed by the same sticky defaults).
     val form = rememberExportFormState(container)
 
+    // sharedGlHost is a plain var, not state-backed: the editor's onGlHost
+    // callback fires asynchronously (GL init), and the Export toolbar
+    // button is always tappable, so a fast tap can land here before the
+    // host exists. Without a state-backed read, the "Preparing renderer…"
+    // disabled state would stick forever even once the host arrives.
+    var glReady by remember(imageId) { mutableStateOf(vm.sharedGlHost != null) }
+
     LaunchedEffect(imageId) {
         // ensure the editor session is loaded (normally already open beneath)
         vm.open(imageId)
@@ -76,6 +83,18 @@ fun ExportScreen(
         // shows the current edits, not a stale revision. Never throws —
         // a missing GL host just leaves the preview on the original photo.
         runCatching { vm.refreshEditedThumbnail() }
+        // Bounded re-check (not an open poll): give the late-arriving
+        // onGlHost callback a few seconds to land, then flip the UI once.
+        if (!glReady) {
+            repeat(12) {
+                kotlinx.coroutines.delay(500)
+                if (vm.sharedGlHost != null) {
+                    glReady = true
+                    return@LaunchedEffect
+                }
+            }
+            glReady = vm.sharedGlHost != null
+        }
     }
     DisposableEffect(Unit) { onDispose { vm.resetExportUi() } }
 
@@ -121,17 +140,17 @@ fun ExportScreen(
                                 form.persistStickyDefaults()
                                 vm.export(form.buildSettings(), host)
                             },
-                            enabled = vm.sharedGlHost != null,
+                            enabled = glReady,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = colors.accent, contentColor = Color.Black,
                                 disabledContainerColor = colors.divider),
                         ) {
-                            Text(if (vm.sharedGlHost == null) "Preparing renderer…"
-                            else "Export to gallery")
+                            Text(if (glReady) "Export to gallery"
+                            else "Preparing renderer…")
                         }
-                        if (vm.sharedGlHost == null) {
+                        if (!glReady) {
                             Text("The preview renderer wasn't ready. Go back to the editor " +
                                 "so the photo loads, then return here.",
                                 style = type.caption, color = colors.textTertiary)
