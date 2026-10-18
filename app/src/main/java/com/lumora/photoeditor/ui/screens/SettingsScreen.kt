@@ -2,6 +2,8 @@ package com.lumora.photoeditor.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -354,7 +356,53 @@ private fun AiKeySettings(container: AppContainer) {
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var testOk by remember { mutableStateOf(false) }
+    var backupMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Reinstalling the app wipes the app-private key store (observed 2026-10-17:
+    // the key field was empty after a fresh APK install). These launchers let the
+    // user back the key up to a file of their choosing and restore it in one tap
+    // — written only on an explicit tap, and the file is plain text by design
+    // (the caption below says so honestly).
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupMsg = try {
+            val key = keyStore.getGeminiKey()
+            if (key == null) {
+                "No key saved to back up"
+            } else {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(key.toByteArray(Charsets.UTF_8))
+                } ?: throw IllegalStateException("Could not open file")
+                "Key backed up — keep the file private."
+            }
+        } catch (e: Exception) {
+            "Backup failed: ${e.message?.take(80)}"
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupMsg = try {
+            val text = context.contentResolver.openInputStream(uri)
+                ?.bufferedReader()?.readText().orEmpty()
+            val key = text.lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+            if (key.isBlank()) {
+                "That file has no key in it"
+            } else {
+                keyStore.setGeminiKey(key)
+                keyInput = ""
+                hasKey = true
+                testResult = null
+                "Key restored — tap Test Connection to verify."
+            }
+        } catch (e: Exception) {
+            "Restore failed: ${e.message?.take(80)}"
+        }
+    }
 
     Text(
         "Connect Gemini to get AI editing suggestions in the editor. " +
@@ -398,6 +446,11 @@ private fun AiKeySettings(container: AppContainer) {
             enabled = keyInput.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Save API Key") }
+        Spacer(Modifier.height(8.dp))
+        LumoraOutlineButton(
+            onClick = { backupMsg = null; restoreLauncher.launch(arrayOf("text/plain")) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Restore key from backup file") }
     }
 
     if (hasKey) {
@@ -487,6 +540,11 @@ private fun AiKeySettings(container: AppContainer) {
                 Text("Test Connection")
             }
         }
+        Spacer(Modifier.height(8.dp))
+        LumoraOutlineButton(
+            onClick = { backupMsg = null; backupLauncher.launch("h2w-gemini-key.txt") },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Back up key to a file") }
     }
 
     testResult?.let {
@@ -497,9 +555,15 @@ private fun AiKeySettings(container: AppContainer) {
             color = if (testOk) colors.textPrimary else colors.danger,
         )
     }
+    backupMsg?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(it, style = type.caption, color = colors.textPrimary)
+    }
     Spacer(Modifier.height(4.dp))
     Text(
-        "The AI bubble (✨) appears in the editor only after a key is saved.",
+        "The AI bubble (✨) appears in the editor only after a key is saved. " +
+            "Reinstalling the app clears the saved key — back it up so you can " +
+            "restore it here in one tap. The backup file is plain text: keep it private.",
         style = type.caption, color = colors.textTertiary,
     )
 }
