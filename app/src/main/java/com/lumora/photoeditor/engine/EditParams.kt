@@ -507,8 +507,10 @@ data class BrushStroke(
     val points: List<BrushPoint>,
     val size: Float,      // normalized to image width
     val feather: Float,   // 0..1
-    val flow: Float,      // 0..1
-    val opacity: Float,   // 0..1
+    val flow: Float,      // 0..1 — per-stamp build-up rate
+    val opacity: Float,   // 0..1 — ceiling: strongest mask density this
+                          // stroke can reach (paint never exceeds it, erase
+                          // never drives below 1-opacity)
     val erase: Boolean,
     /** Pro auto-mask: constrain paint to pixels similar in luminance to the
      *  stroke center (Lightroom-style edge-aware brush). Prevents bleeding

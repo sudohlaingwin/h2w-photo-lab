@@ -190,8 +190,16 @@ object MaskEngine {
         val r = ceil(radius).toInt()
         val x0 = max(0, (cx - r).toInt()); val x1 = min(w - 1, (cx + r).toInt())
         val y0 = max(0, (cy - r).toInt()); val y1 = min(h - 1, (cy + r).toInt())
-        val a = (stroke.flow * stroke.opacity).coerceIn(0f, 1f)
-        if (a <= 0f) return
+        // Pro brush semantics (Lightroom parity): Flow is the per-stamp
+        // build-up rate; Opacity is the ceiling — the strongest mask this
+        // brush can lay down. Paint never exceeds opacity; erase never
+        // drives the mask below (1 - opacity). Previously opacity was only
+        // a per-stamp rate multiplier, so a 50%-opacity brush could still
+        // build to 100% density with enough passes.
+        val flow = stroke.flow.coerceIn(0f, 1f)
+        val cap = stroke.opacity.coerceIn(0f, 1f)
+        if (flow <= 0f || cap <= 0f) return
+        val eraseFloor = 1f - cap
         // Pro auto-mask: sample the luminance under the brush center; pixels
         // whose tone differs strongly are likely across an edge — suppress
         // paint there so the mask hugs the intended region (Lightroom-style).
@@ -205,7 +213,7 @@ object MaskEngine {
         for (y in y0..y1) for (x in x0..x1) {
             val d = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / radius
             if (d > 1f) continue
-            var f = ImageMath.brushFalloff(d, stroke.feather) * a
+            var f = ImageMath.brushFalloff(d, stroke.feather) * flow
             if (autoMask) {
                 // Gate by tone similarity: full paint near the center tone,
                 // fading to zero at the tolerance. Uses smoothstep so the
@@ -217,8 +225,8 @@ object MaskEngine {
                 if (f <= 0.001f) continue
             }
             val idx = y * w + x
-            acc[idx] = if (stroke.erase) acc[idx] * (1f - f)
-            else 1f - (1f - acc[idx]) * (1f - f)
+            acc[idx] = if (stroke.erase) (acc[idx] * (1f - f)).coerceAtLeast(eraseFloor)
+            else (1f - (1f - acc[idx]) * (1f - f)).coerceAtMost(cap)
         }
     }
 

@@ -652,7 +652,7 @@ private fun MaskEditor(
             Text(
                 if (brushAutoMask)
                     "Auto-mask: paint stays within similar tones — it won't bleed across strong edges. Lift your finger to commit."
-                else "Paint directly on the photo. Lift your finger to commit.",
+                else "Paint directly on the photo. Flow sets how fast paint builds; Opacity caps the strongest the brush can paint. Lift your finger to commit.",
                 style = type.caption, color = colors.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
