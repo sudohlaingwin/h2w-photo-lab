@@ -1214,7 +1214,17 @@ class GlEngine {
 
     private fun linkProgram(vs: String, fs: String): Int? {
         val vsh = compile(GLES30.GL_VERTEX_SHADER, vs)
-        val fsh = compile(GLES30.GL_FRAGMENT_SHADER, fs)
+        val fsh = try {
+            compile(GLES30.GL_FRAGMENT_SHADER, fs)
+        } catch (t: Throwable) {
+            // The vertex shader already compiled — it must not be leaked on
+            // the fragment-compile failure path. init() runs again on every
+            // context recreation (GL crash fallback / watchdog re-init), so a
+            // driver that rejects the fragment shader would accumulate one
+            // leaked shader object per retry and eventually exhaust GL memory.
+            runCatching { GLES30.glDeleteShader(vsh) }
+            throw t
+        }
         val prog = GLES30.glCreateProgram()
         GLES30.glAttachShader(prog, vsh)
         GLES30.glAttachShader(prog, fsh)
