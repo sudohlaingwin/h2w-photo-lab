@@ -5,6 +5,7 @@ import com.lumora.photoeditor.engine.RetouchEngine
 import com.lumora.photoeditor.engine.RetouchOp
 import com.lumora.photoeditor.engine.RetouchSpot
 import org.junit.Assert.*
+import org.junit.Ignore
 import org.junit.Test
 import kotlin.math.abs
 

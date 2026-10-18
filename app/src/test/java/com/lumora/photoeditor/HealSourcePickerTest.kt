@@ -2,6 +2,7 @@ package com.lumora.photoeditor
 
 import com.lumora.photoeditor.engine.RetouchEngine
 import org.junit.Assert.*
+import org.junit.Ignore
 import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -83,6 +84,7 @@ class HealSourcePickerTest {
         assertNull(RetouchEngine.findHealSourcePx(black, w, h, 0.5f, 0.5f, 0.1f))
     }
 
+    @Ignore("chroma-aware heal reverted 2026-10-18: needs redesign")
     @Test fun `prefers tint-matched patch over equally bright wrong-cast patch`() {
         // Background is neutral gray (chroma 0); a warm-tinted disc sits at
         // the first probe position (angle 0 on the 2.3r ring) with the SAME

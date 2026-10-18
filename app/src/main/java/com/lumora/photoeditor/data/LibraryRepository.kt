@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +80,9 @@ class LibraryRepository(
     private val editStore: EditStore,
     private val snapshots: SnapshotStore,
 ) {
+    private companion object {
+        const val TAG = "LibraryRepository"
+    }
     private val _images = MutableStateFlow<List<LibraryImage>>(emptyList())
     val images: StateFlow<List<LibraryImage>> = _images.asStateFlow()
     // Whether the library contains any photos at all, regardless of the
@@ -494,39 +498,64 @@ class LibraryRepository(
     /** Imports picked URIs into the library, taking persistable permission. */
     suspend fun importUris(uris: List<Uri>): Int = importUrisWithIds(uris).size
 
-    /** Imports the given URIs and returns the new library row ids, in order. */
+    /**
+     * Imports the given URIs and returns the new library row ids, in input
+     * order. Per-URI isolation: one unreadable/corrupt URI (a revoked share,
+     * a broken provider, a DB hiccup) only skips that single photo — it can
+     * never abort the batch or crash the app. Callers keep the "in order"
+     * contract for the photos that did import.
+     */
     suspend fun importUrisWithIds(uris: List<Uri>): List<String> = withContext(Dispatchers.IO) {
         val ids = mutableListOf<String>()
+        var skipped = 0
         for (uri in uris) {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) { /* picker/share URIs may not support it */ }
-            val name = queryDisplayName(uri) ?: "Imported photo"
-            val (w, h) = querySize(uri)
-            val id = UUID.randomUUID().toString()
-            dao.upsertImage(
-                LibraryImage(
-                    id = id,
-                    contentUri = uri.toString(),
-                    displayName = name,
-                    dateAdded = System.currentTimeMillis() / 1000,
-                    width = w, height = h,
-                    folder = "Imports",
-                )
-            )
-            ids.add(id)
-            // RAW program Phase 2 slice 2: give RAW imports a real grid
-            // thumbnail. Coil cannot decode CR2/NEF/DNG/..., so the cell
-            // would stay blank. The camera's embedded preview JPEG is pulled
-            // through the native bridge (unpack_thumb — fast, no demosaic)
-            // once here, at import time on IO, and cached on disk keyed by
-            // the row id. Best-effort: any failure just means no thumbnail,
-            // never a failed import.
-            if (RawDecoder.isRaw(name)) extractRawThumb(uri, id)
+            val id = try {
+                importOneUri(uri)
+            } catch (t: Throwable) {
+                // Cancellation stays cooperative; anything else only costs
+                // that one photo, never the batch and never the process.
+                if (t is CancellationException) throw t
+                Log.w(TAG, "import skipped unreadable photo: $uri", t)
+                null
+            }
+            if (id != null) ids.add(id) else skipped++
         }
         refresh()
+        if (skipped > 0) Log.i(TAG, "import finished: ${ids.size} imported, $skipped skipped")
         ids
+    }
+
+    /**
+     * Imports a single URI and returns the new library row id. Does not
+     * throw except for [CancellationException].
+     */
+    private suspend fun importOneUri(uri: Uri): String = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) { /* picker/share URIs may not support it */ }
+        val name = queryDisplayName(uri) ?: "Imported photo"
+        val (w, h) = querySize(uri)
+        val id = UUID.randomUUID().toString()
+        dao.upsertImage(
+            LibraryImage(
+                id = id,
+                contentUri = uri.toString(),
+                displayName = name,
+                dateAdded = System.currentTimeMillis() / 1000,
+                width = w, height = h,
+                folder = "Imports",
+            )
+        )
+        // RAW program Phase 2 slice 2: give RAW imports a real grid
+        // thumbnail. Coil cannot decode CR2/NEF/DNG/..., so the cell
+        // would stay blank. The camera's embedded preview JPEG is pulled
+        // through the native bridge (unpack_thumb — fast, no demosaic)
+        // once here, at import time on IO, and cached on disk keyed by
+        // the row id. Best-effort: any failure just means no thumbnail,
+        // never a failed import.
+        if (RawDecoder.isRaw(name)) extractRawThumb(uri, id)
+        id
     }
 
     /**
@@ -590,14 +619,22 @@ class LibraryRepository(
             cached
         }
 
+    /**
+     * Display name for [uri], or null when the provider has none. Total:
+     * a broken or hostile provider (SecurityException, unknown URL scheme,
+     * ...) only costs the name — the import falls back to "Imported photo"
+     * instead of dying.
+     */
     private fun queryDisplayName(uri: Uri): String? {
-        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
-            null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                val i = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                if (i >= 0) return c.getString(i)
+        try {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val i = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    if (i >= 0) return c.getString(i)
+                }
             }
-        }
+        } catch (_: Exception) { }
         return uri.lastPathSegment
     }
 

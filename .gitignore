@@ -5,3 +5,6 @@ local.properties
 *.aab
 .DS_Store
 .kotlin/
+
+# Native build caches
+app/.cxx/

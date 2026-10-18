@@ -364,9 +364,12 @@ private fun MaskRow(
             )
         }
         Spacer(Modifier.width(8.dp))
+        // Stateful description (not a static "Toggle mask"): TalkBack users
+        // learn both the target mask and the outcome of activating it.
         LumoraIconButton(
             icon = if (mask.enabled) LumoraIcons.Visibility else LumoraIcons.VisibilityOff,
-            contentDescription = "Toggle mask",
+            contentDescription = if (mask.enabled) "Hide mask ${mask.name}"
+            else "Show mask ${mask.name}",
             tint = if (mask.enabled) colors.textPrimary else colors.textTertiary,
             iconSize = 20.dp,
             onClick = onToggle,
