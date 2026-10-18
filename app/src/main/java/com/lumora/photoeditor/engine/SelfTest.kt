@@ -4647,6 +4647,70 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     "shape=$badShape alpha=$badAlpha check=$badCheck " +
                     "lic=$licOk licOver=$licOverOk gate=$gateOk text=$textOk"
             }
+
+            // ---- check 72: clone tone/texture co-registration ----
+            // The Clone stamp's texture is bilinearly sampled at the exact
+            // fractional source coordinate (x+dx, y+dy); its tone correction
+            // smooth(dest) − smooth(src) must be evaluated at that SAME
+            // fractional point, not at the floored integer pixel (cycle 136
+            // fix, 2026-10-18: the integer index left a faint tone fringe
+            // wherever the source patch crossed a hard edge). This pins the
+            // fix on-device through the real compositeSpots path (the
+            // straight-alpha overlay the preview uploads); the JVM-only
+            // CloneToneMatchTest pins the same property off-device.
+            check("Clone tone/texture co-registration") {
+                val w = 200; val h = 100
+                // Source half (x < 100): sharp step edge at x = 62 (60→200).
+                // Dest half (x >= 100): flat 160.
+                val img = IntArray(w * h) { i ->
+                    val x = i % w
+                    val v = if (x < 100) { if (x < 62) 60 else 200 } else 160
+                    (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+                }
+                // Clone from (60.3, 50) to (140, 50): dx = −79.7, fraction .7.
+                val spot = RetouchSpot(
+                    op = RetouchOp.CLONE,
+                    x = 0.7f, y = 0.5f,
+                    srcX = 0.3015f, srcY = 0.5f,
+                    size = 0.12f, feather = 0.5f, strength = 1f,
+                )
+                val overlay =
+                    RetouchEngine.compositeSpots(listOf(spot), w, h, img)
+                // Probe dest pixel (142, 50): disc interior (falloff == 1);
+                // its source sample lands on the blur transition of the
+                // source step edge, where floored vs bilinear tone sampling
+                // differ most (~3 levels — the old code fails this).
+                val px = 142; val py = 50
+                val o = overlay[py * w + px]
+                val alpha = (o ushr 24) and 0xFF
+                // Reference tone fields via the real box blur
+                // (translation-invariant: identical to the engine's region
+                // blurs at these interior sample points, both >= blurR
+                // inside their regions).
+                val blurR = 6
+                val fullBlur = InpaintingCore.boxBlurRgb(img, w, h, blurR)
+                val trueFx = px + (0.3015f * w - 0.7f * w)
+                val dRef = ((fullBlur[py * w + px] shr 16) and 0xFF).toDouble()
+                fun refBilinear(fx: Float): Double {
+                    val x0 = fx.toInt().coerceIn(0, w - 1)
+                    val tx = (fx - x0).coerceIn(0f, 1f).toDouble()
+                    val x1 = (x0 + 1).coerceIn(0, w - 1)
+                    val v0 = ((fullBlur[py * w + x0] shr 16) and 0xFF).toDouble()
+                    val v1 = ((fullBlur[py * w + x1] shr 16) and 0xFF).toDouble()
+                    return v0 * (1 - tx) + v1 * tx
+                }
+                val sRef = refBilinear(trueFx)
+                // Texture at the sample point is locally constant 200 (both
+                // bilinear neighbours are 200), so the engine's texture
+                // sample is exactly 200 regardless of rounding details.
+                val expected =
+                    (200.0 + (dRef - sRef)).roundToInt().coerceIn(0, 255)
+                val actual = (o shr 16) and 0xFF
+                val ok = alpha > 250 && abs(actual - expected) <= 2
+                ok to "probe alpha=$alpha (need >250) actual=$actual " +
+                    "expected=$expected (need |diff|<=2: tone correction " +
+                    "co-registered with the stamped texture)"
+            }
         } finally {
             // restore the real photo source so the preview keeps rendering it
             zoomMatrix = savedZoom
