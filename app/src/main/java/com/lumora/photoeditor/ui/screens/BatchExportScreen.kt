@@ -91,6 +91,14 @@ fun BatchExportScreen(
     var progress by remember { mutableStateOf<Pair<Int, Float>?>(null) }
     var liveResults by remember { mutableStateOf(mapOf<Int, BatchExportResult>()) }
     var doneResults by remember { mutableStateOf<List<BatchExportResult>?>(null) }
+    /**
+     * Batch-level failure (the whole run died, not just one photo). Without
+     * this, an unexpected throw out of [batchExport] — e.g. OOM allocating
+     * its stand-in bitmap outside its own try — killed the launch coroutine
+     * and left [running] true forever: a dead spinner, Back "cancelling" a
+     * dead job, no way out short of killing the app.
+     */
+    var batchError by remember { mutableStateOf<String?>(null) }
     val cancelFlag = remember { AtomicBoolean(false) }
 
     // Kept 1:1 with `ids` (nullable slots) instead of mapNotNull: a photo
@@ -123,26 +131,42 @@ fun BatchExportScreen(
         progress = null
         liveResults = emptyMap()
         doneResults = null
+        batchError = null
         scope.launch {
-            val res = batchExport(
-                container = container,
-                imageIds = list,
-                settings = form.buildSettings(),
-                glEngine = engine,
-                glHost = host,
-                // Callbacks arrive on Dispatchers.IO — hop to Main before
-                // touching Compose state.
-                onPhotoProgress = { i, p ->
-                    scope.launch { progress = i to p }
-                },
-                onPhotoDone = { i, r ->
-                    scope.launch { liveResults = liveResults + (i to r) }
-                },
-                shouldCancel = { cancelFlag.get() },
-            )
-            doneResults = res
-            running = false
-            progress = null
+            try {
+                val res = batchExport(
+                    container = container,
+                    imageIds = list,
+                    settings = form.buildSettings(),
+                    glEngine = engine,
+                    glHost = host,
+                    // Callbacks arrive on Dispatchers.IO — hop to Main before
+                    // touching Compose state.
+                    onPhotoProgress = { i, p ->
+                        scope.launch { progress = i to p }
+                    },
+                    onPhotoDone = { i, r ->
+                        scope.launch { liveResults = liveResults + (i to r) }
+                    },
+                    shouldCancel = { cancelFlag.get() },
+                )
+                doneResults = res
+            } catch (t: Throwable) {
+                // Cancellation is cooperative via shouldCancel/cancel(); a
+                // real coroutine cancellation must keep propagating.
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                batchError = if (t is OutOfMemoryError)
+                    "Not enough memory to run the batch export — try fewer " +
+                        "photos or a smaller export size. Your photos are unchanged."
+                else
+                    "The batch export stopped unexpectedly " +
+                        "(${t.message ?: "unknown error"}). Your photos are unchanged."
+            } finally {
+                // Always restored, even on failure: the screen can never get
+                // stuck on its running spinner again.
+                running = false
+                progress = null
+            }
         }
     }
 
@@ -184,6 +208,14 @@ fun BatchExportScreen(
                     results = doneResults!!,
                     total = ids.size,
                     onBack = onBack,
+                )
+                batchError != null -> EmptyState(
+                    title = "Batch export stopped",
+                    body = batchError
+                        ?: "Something went wrong. Your photos are unchanged.",
+                    actionLabel = "Try again",
+                    onAction = { batchError = null },
+                    icon = LumoraIcons.Error,
                 )
                 running -> BatchRunning(
                     ids = ids,

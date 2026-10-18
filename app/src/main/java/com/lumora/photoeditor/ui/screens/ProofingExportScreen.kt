@@ -112,26 +112,36 @@ fun ProofingExportScreen(
         error = null
         notice = null
         scope.launch {
-            val res = buildContactSheets(
-                container = container,
-                gallery = g,
-                options = ContactSheetOptions(columns = columns, showMarks = showMarks),
-                glEngine = engine,
-                glHost = host,
-                onPhotoProgress = { done, total ->
-                    scope.launch { progress = done to total }
-                },
-                shouldCancel = { cancelFlag.get() },
-            )
-            res.fold(
-                onSuccess = { outcome = it },
-                onFailure = {
-                    error = if (it is kotlinx.coroutines.CancellationException)
-                        "Cancelled" else it.message ?: "Could not build the contact sheet"
-                },
-            )
-            running = false
-            progress = null
+            try {
+                val res = buildContactSheets(
+                    container = container,
+                    gallery = g,
+                    options = ContactSheetOptions(columns = columns, showMarks = showMarks),
+                    glEngine = engine,
+                    glHost = host,
+                    onPhotoProgress = { done, total ->
+                        scope.launch { progress = done to total }
+                    },
+                    shouldCancel = { cancelFlag.get() },
+                )
+                res.fold(
+                    onSuccess = { outcome = it },
+                    onFailure = {
+                        error = if (it is kotlinx.coroutines.CancellationException)
+                            "Cancelled" else it.message ?: "Could not build the contact sheet"
+                    },
+                )
+            } catch (t: Throwable) {
+                // buildContactSheets returns a Result, but a throw outside its
+                // own guards must not leave the screen stuck on its spinner.
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                error = if (t is OutOfMemoryError)
+                    "Not enough memory to build the contact sheet — try fewer photos"
+                else t.message ?: "Could not build the contact sheet"
+            } finally {
+                running = false
+                progress = null
+            }
         }
     }
 
@@ -151,7 +161,15 @@ fun ProofingExportScreen(
             var saved = 0
             withContext(Dispatchers.IO) {
                 for (f in files) {
-                    val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: continue
+                    // One corrupt sheet file must not kill the whole save:
+                    // decode sits outside the old try, so a throw here died
+                    // the coroutine with no notice ever set.
+                    val bmp = try {
+                        BitmapFactory.decodeFile(f.absolutePath)
+                    } catch (t: Throwable) {
+                        if (t is kotlinx.coroutines.CancellationException) throw t
+                        null
+                    } ?: continue
                     try {
                         val uri = container.exports.saveBitmapToGallery(
                             bmp,
