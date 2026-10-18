@@ -58,7 +58,7 @@ fun GradePanel(vm: EditorViewModel) {
             ParamSlider(vm, "Balance", g.balance, historyLabel = "Grading balance") { s, v ->
                 s.copy(grading = s.grading.copy(balance = v))
             }
-            ParamSlider(vm, "Blending", g.blending, 0f..100f, "Grading blending") { s, v ->
+            ParamSlider(vm, "Blending", g.blending, 0f..100f, "Grading blending", default = 100f) { s, v ->
                 s.copy(grading = s.grading.copy(blending = v))
             }
         }

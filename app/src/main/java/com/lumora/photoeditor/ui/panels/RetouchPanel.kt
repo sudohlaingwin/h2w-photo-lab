@@ -280,6 +280,7 @@ fun RetouchPanel(
                 value = waveletTextureKeep,
                 onValueChange = { waveletTextureKeep = it },
                 valueRange = 0f..1f,
+                default = 1f,
                 valueText = "${(waveletTextureKeep * 100).toInt()}%",
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
@@ -287,6 +288,7 @@ fun RetouchPanel(
                 value = blemishSmooth,
                 onValueChange = { blemishSmooth = it },
                 valueRange = 0f..1f,
+                default = 0.6f,
                 valueText = "${(blemishSmooth * 100).toInt()}%",
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
@@ -294,6 +296,7 @@ fun RetouchPanel(
                 value = toneEven,
                 onValueChange = { toneEven = it },
                 valueRange = 0f..1f,
+                default = 0.3f,
                 valueText = "${(toneEven * 100).toInt()}%",
             )
             LumoraButton(
@@ -432,6 +435,7 @@ fun RetouchPanel(
                     label = "Texture keep",
                     value = textureKeep,
                     valueRange = 0f..1f,
+                    default = 0.45f,
                     onValueChange = onTextureKeep,
                     valueText = "${(textureKeep * 100).toInt()}%",
                     modifier = Modifier.padding(horizontal = 0.dp),

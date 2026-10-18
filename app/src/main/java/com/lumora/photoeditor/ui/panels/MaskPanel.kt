@@ -914,6 +914,7 @@ private fun MaskEditor(
         label = "Amount",
         value = mask.amount * 100f,
         valueRange = 0f..100f,
+        default = 100f,
         onBegin = { vm.beginGesture() },
         onValueChange = { v ->
             vm.update(gesture = true) { s ->

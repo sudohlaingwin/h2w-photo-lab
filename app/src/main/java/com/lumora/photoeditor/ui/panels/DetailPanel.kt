@@ -55,10 +55,10 @@ fun DetailPanel(vm: EditorViewModel) {
             ParamSlider(vm, "Amount", d.sharpening, 0f..150f, "Sharpening") { s, v ->
                 s.copy(detail = s.detail.copy(sharpening = v))
             }
-            ParamSlider(vm, "Radius", d.radius, 0.5f..3f, "Sharpen radius") { s, v ->
+            ParamSlider(vm, "Radius", d.radius, 0.5f..3f, "Sharpen radius", default = 1f) { s, v ->
                 s.copy(detail = s.detail.copy(radius = v))
             }
-            ParamSlider(vm, "Detail", d.detail, 0f..100f, "Sharpen detail") { s, v ->
+            ParamSlider(vm, "Detail", d.detail, 0f..100f, "Sharpen detail", default = 25f) { s, v ->
                 s.copy(detail = s.detail.copy(detail = v))
             }
             ParamSlider(vm, "Masking", d.masking, 0f..100f, "Sharpen masking") { s, v ->
@@ -69,13 +69,15 @@ fun DetailPanel(vm: EditorViewModel) {
             ParamSlider(vm, "Luminance", d.luminanceNr, 0f..100f, "Luminance NR") { s, v ->
                 s.copy(detail = s.detail.copy(luminanceNr = v))
             }
-            ParamSlider(vm, "Luminance detail", d.luminanceDetail, 0f..100f, "Luminance detail") { s, v ->
+            ParamSlider(vm, "Luminance detail", d.luminanceDetail, 0f..100f, "Luminance detail",
+                default = 50f) { s, v ->
                 s.copy(detail = s.detail.copy(luminanceDetail = v))
             }
-            ParamSlider(vm, "Color", d.colorNr, 0f..100f, "Color NR") { s, v ->
+            ParamSlider(vm, "Color", d.colorNr, 0f..100f, "Color NR", default = 25f) { s, v ->
                 s.copy(detail = s.detail.copy(colorNr = v))
             }
-            ParamSlider(vm, "Color detail", d.colorDetail, 0f..100f, "Color NR detail") { s, v ->
+            ParamSlider(vm, "Color detail", d.colorDetail, 0f..100f, "Color NR detail",
+                default = 50f) { s, v ->
                 s.copy(detail = s.detail.copy(colorDetail = v))
             }
         }
@@ -88,7 +90,8 @@ fun DetailPanel(vm: EditorViewModel) {
             ParamSlider(vm, "Amount", d.deconv, 0f..100f, "Deconvolution") { s, v ->
                 s.copy(detail = s.detail.copy(deconv = v))
             }
-            ParamSlider(vm, "Radius", d.deconvRadius, 0.5f..1.5f, "Deconvolution radius") { s, v ->
+            ParamSlider(vm, "Radius", d.deconvRadius, 0.5f..1.5f, "Deconvolution radius",
+                default = 1f) { s, v ->
                 s.copy(detail = s.detail.copy(deconvRadius = v))
             }
             Text(

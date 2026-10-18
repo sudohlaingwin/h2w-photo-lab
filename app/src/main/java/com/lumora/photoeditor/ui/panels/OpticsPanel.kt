@@ -92,10 +92,10 @@ fun OpticsPanel(
             ParamSlider(vm, "Amount", o.vignetteAmount, historyLabel = "Vignette") { s, v ->
                 s.copy(optics = s.optics.copy(vignetteAmount = v))
             }
-            ParamSlider(vm, "Midpoint", o.vignetteMidpoint, 0f..100f, "Vignette midpoint") { s, v ->
+            ParamSlider(vm, "Midpoint", o.vignetteMidpoint, 0f..100f, "Vignette midpoint", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(vignetteMidpoint = v))
             }
-            ParamSlider(vm, "Feather", o.vignetteFeather, 0f..100f, "Vignette feather") { s, v ->
+            ParamSlider(vm, "Feather", o.vignetteFeather, 0f..100f, "Vignette feather", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(vignetteFeather = v))
             }
             ParamSlider(vm, "Roundness", o.vignetteRoundness, historyLabel = "Vignette roundness") { s, v ->
@@ -106,16 +106,16 @@ fun OpticsPanel(
             ParamSlider(vm, "Amount", o.lensBlurAmount, 0f..100f, "Lens blur") { s, v ->
                 s.copy(optics = s.optics.copy(lensBlurAmount = v))
             }
-            ParamSlider(vm, "Focus size", o.lensSize, 0f..100f, "Lens blur size") { s, v ->
+            ParamSlider(vm, "Focus size", o.lensSize, 0f..100f, "Lens blur size", default = 35f) { s, v ->
                 s.copy(optics = s.optics.copy(lensSize = v))
             }
-            ParamSlider(vm, "Feather", o.lensFeather, 0f..100f, "Lens blur feather") { s, v ->
+            ParamSlider(vm, "Feather", o.lensFeather, 0f..100f, "Lens blur feather", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(lensFeather = v))
             }
-            ParamSlider(vm, "Focus X", o.lensFocusX * 100f, 0f..100f, "Lens focus X") { s, v ->
+            ParamSlider(vm, "Focus X", o.lensFocusX * 100f, 0f..100f, "Lens focus X", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(lensFocusX = v / 100f))
             }
-            ParamSlider(vm, "Focus Y", o.lensFocusY * 100f, 0f..100f, "Lens focus Y") { s, v ->
+            ParamSlider(vm, "Focus Y", o.lensFocusY * 100f, 0f..100f, "Lens focus Y", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(lensFocusY = v / 100f))
             }
             Row(
@@ -151,10 +151,10 @@ fun OpticsPanel(
             ParamSlider(vm, "Amount", o.grainAmount, 0f..100f, "Grain") { s, v ->
                 s.copy(optics = s.optics.copy(grainAmount = v))
             }
-            ParamSlider(vm, "Size", o.grainSize, 0f..100f, "Grain size") { s, v ->
+            ParamSlider(vm, "Size", o.grainSize, 0f..100f, "Grain size", default = 25f) { s, v ->
                 s.copy(optics = s.optics.copy(grainSize = v))
             }
-            ParamSlider(vm, "Roughness", o.grainRoughness, 0f..100f, "Grain roughness") { s, v ->
+            ParamSlider(vm, "Roughness", o.grainRoughness, 0f..100f, "Grain roughness", default = 50f) { s, v ->
                 s.copy(optics = s.optics.copy(grainRoughness = v))
             }
         }

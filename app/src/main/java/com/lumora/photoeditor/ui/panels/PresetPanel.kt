@@ -299,6 +299,7 @@ fun PresetPanel(
                 label = "Strength",
                 value = strength,
                 valueRange = 0f..1f,
+                default = 1f, // presets always apply at full strength on select
                 onValueChange = { strength = it },
                 onBegin = {},
                 onEnd = {
