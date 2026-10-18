@@ -4270,6 +4270,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // not stamp them onto the new photo.
         val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
+            // Defensive: the caller routes here only when plan.portrait is
+            // non-null, but this function must never NPE on a caller change —
+            // capture once and fail with an honest message instead.
+            val portrait = plan.portrait
+            if (portrait == null) {
+                onResult("Couldn't apply that edit — no portrait intent found.")
+                return@guardLaunch
+            }
             val bmp = snapshotPreview()
             if (bmp == null) {
                 onResult("Load a photo first, then describe the edit.")
@@ -4277,14 +4285,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             }
             try {
                 val spots = try {
-                    buildPortraitSpots(plan.portrait!!, bmp)
+                    buildPortraitSpots(portrait, bmp)
                 } catch (t: Throwable) {
                     if (t is CancellationException) throw t
                     emptyList<RetouchSpot>()
                 }
                 val hasGlobal = plan.global != PromptGlobal()
                 if (spots.isEmpty() && !hasGlobal) {
-                    onResult(portraitMissMessage(plan.portrait!!))
+                    onResult(portraitMissMessage(portrait))
                     return@guardLaunch
                 }
                 if (stalePhoto(tapPhotoId)) {
@@ -4305,7 +4313,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 } finally {
                     endGesture("Prompt: $prompt")
                 }
-                onResult(portraitResultMessage(plan.portrait!!, spots.size, plan.effectLabels))
+                onResult(portraitResultMessage(portrait, spots.size, plan.effectLabels))
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 onResult("Couldn't apply that edit — ${t.message ?: "try again"}.")
