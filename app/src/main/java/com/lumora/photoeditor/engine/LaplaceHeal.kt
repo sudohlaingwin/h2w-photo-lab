@@ -1,5 +1,7 @@
 package com.lumora.photoeditor.engine
 
+import kotlin.math.roundToInt
+
 /**
  * Laplace-based seamless cloning for the Heal tool.
  *
@@ -173,10 +175,18 @@ object LaplaceHeal {
             val nr = (healed[0][i] * m + dr * da * (1f - m)) / na
             val ng = (healed[1][i] * m + dg * da * (1f - m)) / na
             val nb = (healed[2][i] * m + db * da * (1f - m)) / na
-            out[gi] = ((na * 255f).toInt().coerceIn(0, 255) shl 24) or
-                (nr.toInt().coerceIn(0, 255) shl 16) or
-                (ng.toInt().coerceIn(0, 255) shl 8) or
-                nb.toInt().coerceIn(0, 255)
+            // Round-to-nearest, not truncation: the healed color is a float
+            // reconstruction (plane-fit tone field), and on a non-planar
+            // field it is genuinely fractional — truncating biased every
+            // healed pixel up to 1 level dark (measured mean -0.47 levels
+            // over the disc interior: a faint darkening inside every heal
+            // stroke on smooth gradients/skin). Same rationale as
+            // RetouchEngine.blendInto; pinned by
+            // LaplaceHealTest.heal_overlayWriteRoundsToNearest_noDarkBias.
+            out[gi] = ((na * 255f).roundToInt().coerceIn(0, 255) shl 24) or
+                (nr.roundToInt().coerceIn(0, 255) shl 16) or
+                (ng.roundToInt().coerceIn(0, 255) shl 8) or
+                nb.roundToInt().coerceIn(0, 255)
         }
     }
 

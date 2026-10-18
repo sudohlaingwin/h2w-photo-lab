@@ -105,4 +105,36 @@ class LaplaceHealTest {
         LaplaceHeal.heal(gradient(), IntArray(10), w, h, 32f, 32f, 10f, 0f, 0f)
         assertTrue(out.all { it == 0 })
     }
+
+    @Test fun heal_overlayWriteRoundsToNearest_noDarkBias() {
+        // Regression: the overlay write truncated the float healed color
+        // (.toInt()) instead of rounding to nearest. On a non-planar tone
+        // field the healed value is genuinely fractional, so truncation
+        // biased every healed pixel down — measured mean -0.47 levels over
+        // the disc interior on a mild quadratic gradient, a faint darkening
+        // inside every heal stroke on smooth gradients/skin. Rounding is
+        // unbiased (same rationale as RetouchEngine.blendInto).
+        val img = IntArray(w * h) { i ->
+            val y = i / w
+            val v = (40 + 2 * y + y * y / 256.0).toInt().coerceIn(0, 255)
+            (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        }
+        val out = IntArray(w * h)
+        LaplaceHeal.heal(img, out, w, h, 32f, 32f, 10f, 0f, 7f, 0.6f, 1f)
+        var sum = 0.0; var n = 0
+        for (y in 0 until h) for (x in 0 until w) {
+            val dx = x - 32f; val dy = y - 32f
+            if (dx * dx + dy * dy > 4f * 4f) continue // interior: mask == 1
+            val o = out[y * w + x]
+            assertEquals("alpha must be opaque in the disc interior", 255, alpha(o))
+            sum += ((o shr 16) and 0xFF) - ((img[y * w + x] shr 16) and 0xFF)
+            n++
+        }
+        assertTrue("interior sampled", n > 40)
+        val meanBias = sum / n
+        assertTrue(
+            "heal must not systematically darken the disc (meanBias=$meanBias)",
+            abs(meanBias) < 0.3,
+        )
+    }
 }
