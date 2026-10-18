@@ -4196,12 +4196,18 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // attach it (or the global deltas) to the new photo.
         val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
+            // Caller-owned preview copy (see snapshotPreview): it MUST be
+            // recycled when done. Every text-prompt edit used to leak one
+            // full preview-sized bitmap here — no recycle() on any path —
+            // so repeated prompt edits accumulated them toward an OOM on
+            // large photos. The `finally` below covers the happy path, the
+            // region-miss / stale-photo early returns, and the catch.
+            val bmp = snapshotPreview()
+            if (bmp == null) {
+                onResult("Load a photo first, then describe the edit.")
+                return@guardLaunch
+            }
             try {
-                val bmp = snapshotPreview()
-                if (bmp == null) {
-                    onResult("Load a photo first, then describe the edit.")
-                    return@guardLaunch
-                }
                 val region = plan.region
                 val maskSpec = region?.let { buildPromptMask(it, bmp) }
                 if (region != null && maskSpec == null) {
@@ -4249,6 +4255,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 onResult("Couldn't apply that edit — ${t.message ?: "try again"}.")
+            } finally {
+                if (!bmp.isRecycled) bmp.recycle()
             }
         }
     }
