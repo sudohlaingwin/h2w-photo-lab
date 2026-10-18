@@ -288,11 +288,13 @@ fun GeometryPanel(
 /**
  * Full-width panel action button (Geometry panel). One component for the four
  * hand-rolled Box+clickable buttons so their surface, shape, type and
- * accessibility semantics can never drift apart again. Visuals are unchanged:
- * panelElevated surface, 10.dp corners, accent toolLabel text, 12.dp vertical
- * padding. Every instance carries role=Button and an onClickLabel so
- * TalkBack announces the action ("Auto straighten", ...) instead of a bare
- * "double-tap to activate".
+ * accessibility semantics can never drift apart again.
+ *
+ * 48dp platform-minimum hit area: the visual button (panelElevated surface,
+ * 10.dp corners, 12.dp vertical padding) is UNCHANGED, centered inside the
+ * larger tappable region. role=Button + onClickLabel stay on the hit area
+ * so TalkBack keeps announcing the action ("Auto straighten", ...) instead
+ * of a bare "double-tap to activate".
  */
 @Composable
 private fun PanelActionButton(
@@ -304,41 +306,57 @@ private fun PanelActionButton(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Lumora.colors.panelElevated)
-            .clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick)
-            .padding(vertical = 12.dp),
+            .heightIn(min = 48.dp)
+            .clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            style = Lumora.type.toolLabel,
-            color = Lumora.colors.accent,
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Lumora.colors.panelElevated)
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = Lumora.type.toolLabel,
+                color = Lumora.colors.accent,
+            )
+        }
     }
 }
 
 @Composable
 private fun RowScope.FlipButton(label: String, active: Boolean, onClick: () -> Unit) {
+    // 48dp platform-minimum hit area: the flip tile visual (8.dp corners,
+    // 10.dp vertical padding, accentDim when active) is UNCHANGED, centered
+    // inside the larger tappable region. Toggleable, not a plain clickable:
+    // TalkBack announces "checked/not checked" for the flip state (the
+    // visible label text names the control, same pattern as the aspect
+    // chips below).
     Box(
         modifier = Modifier
             .weight(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (active) Lumora.colors.accentDim else Lumora.colors.panelElevated)
-            // Toggleable, not a plain clickable: TalkBack announces
-            // "checked/not checked" for the flip state (the visible label
-            // text names the control, same pattern as the aspect chips
-            // below). Visuals unchanged.
+            .heightIn(min = 48.dp)
             .toggleable(
                 value = active,
                 role = Role.Checkbox,
                 onValueChange = { onClick() },
-            )
-            .padding(vertical = 10.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = Lumora.type.toolLabel,
-            color = if (active) Lumora.colors.accent else Lumora.colors.textSecondary)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (active) Lumora.colors.accentDim else Lumora.colors.panelElevated)
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, style = Lumora.type.toolLabel,
+                color = if (active) Lumora.colors.accent else Lumora.colors.textSecondary)
+        }
     }
 }
 
