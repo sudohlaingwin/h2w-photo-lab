@@ -49,7 +49,7 @@ import com.lumora.photoeditor.ui.components.LumoraChip
 import com.lumora.photoeditor.ui.components.LumoraTextButton
 import com.lumora.photoeditor.ui.components.LumoraSlider
 import com.lumora.photoeditor.ui.components.LumoraTextButton
-import com.lumora.photoeditor.ui.components.LumoraProgressIndicator
+import com.lumora.photoeditor.ui.components.ShimmerBox
 import com.lumora.photoeditor.ui.components.LumoraBottomSheet
 import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
@@ -500,8 +500,11 @@ private fun PresetCard(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                LumoraProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp,
-                    color = colors.textTertiary)
+                // Skeleton shimmer while the preset thumbnail renders — the
+                // same Lightroom-style placeholder the library grid uses via
+                // ThumbImage, so preset tiles never sit as flat empty boxes
+                // with a bare spinner.
+                ShimmerBox(Modifier.fillMaxSize())
             }
             if (selected) {
                 Icon(Icons.Default.Check, null, tint = colors.accent,
