@@ -410,11 +410,18 @@ fun RetouchPanel(
                     )
                 }
             }
+            // Double-tap reset defaults mirror EditorScreen's initial brush state
+            // (0.06f size, 0.6f feather, 1f strength): without them the value
+            // pill rendered accent-tinted as "modified" on first open and
+            // double-tap reset pushed sliders to 0 (a near-invisible brush)
+            // instead of the real defaults — the same bug class fixed for the
+            // mask brush in commit 8b9998c.
             com.lumora.photoeditor.ui.components.LumoraSlider(
                 label = "Brush size",
                 value = size,
                 valueRange = 0.01f..0.3f,
                 onValueChange = onSize,
+                default = 0.06f,
                 valueText = "${(size * 100).toInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
@@ -423,6 +430,7 @@ fun RetouchPanel(
                 value = feather,
                 valueRange = 0.05f..1f,
                 onValueChange = onFeather,
+                default = 0.6f,
                 valueText = "${(feather * 100).toInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
@@ -431,6 +439,7 @@ fun RetouchPanel(
                 value = strength,
                 valueRange = 0f..1f,
                 onValueChange = onStrength,
+                default = 1f,
                 valueText = "${(strength * 100).toInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
