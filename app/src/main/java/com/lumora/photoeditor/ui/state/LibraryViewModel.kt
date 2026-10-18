@@ -1,6 +1,7 @@
 package com.lumora.photoeditor.ui.state
 
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lumora.photoeditor.core.AppContainer
@@ -456,7 +457,17 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun delete(id: String) {
-        viewModelScope.launch { container.library.delete(id) }
+        viewModelScope.launch {
+            try {
+                container.library.delete(id)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                // cleanupPhotoFiles documents that it may throw (Room/file
+                // I/O); a failing single delete must degrade to a no-op,
+                // never an app crash. Same policy as deleteMany below.
+                Log.w("LibraryViewModel", "delete failed for photo $id", t)
+            }
+        }
     }
 
     /** Batch delete for multi-select; onDone receives the number removed. */
