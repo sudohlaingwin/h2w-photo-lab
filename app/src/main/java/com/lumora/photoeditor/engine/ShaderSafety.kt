@@ -14,7 +14,11 @@ package com.lumora.photoeditor.engine
  * `uniform sampler2D uImage;`, which is a compile error per the GLSL ES
  * 3.00 spec (samplers have no default precision there) that strict drivers
  * reject outright — the blur program feeds sharpening/clarity, so on those
- * devices it meant a black preview.
+ * devices it meant a black preview. Rule (d) guards the remaining classic
+ * Mali trip hazard: `for` loops whose trip count is not a compile-time
+ * constant. Dynamic bounds are legal ES 3.00, but several Mali generations
+ * miscompile (or refuse to unroll) them in fragment shaders; the shipped
+ * shaders only use constant bounds and this keeps it that way.
  * This audit scans every shipped shader for all three patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
@@ -57,6 +61,20 @@ object ShaderSafety {
 
     private val constantIndex = Regex("""^\d+$""")
 
+    /**
+     * `for` loop headers: group 1 = loop variable, group 2 = trip-count
+     * (condition) expression. The type prefix is optional so `for (i = 0; …)`
+     * (reused variable) is covered too.
+     */
+    private val forLoop =
+        Regex("""for\s*\(\s*(?:(?:int|uint|float)\s+)?(\w+)\s*=[^;]*;([^;]*);[^)]*\)""")
+
+    /** Identifier tokens inside a loop bound; numeric literals never match. */
+    private val identifier = Regex("""[A-Za-z_]\w*""")
+
+    /** GLSL keywords that may legally appear in a constant loop bound. */
+    private val loopBoundKeywords = setOf("int", "uint", "float", "bool")
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -72,9 +90,11 @@ object ShaderSafety {
      * Audits arbitrary shader sources (name → GLSL). Flags:
      *  - any declared sampler array indexed with a non-constant expression
      *    (covers loop-indexed and uniform-indexed sampling),
-     *  - any precision statement applied to a sampler type, and
+     *  - any precision statement applied to a sampler type,
      *  - any sampler uniform without an explicit precision qualifier in a
-     *    `#version 300 es` source (no default sampler precision there).
+     *    `#version 300 es` source (no default sampler precision there), and
+     *  - any `for` loop whose trip count is not a compile-time constant
+     *    (dynamic loop bound — a classic Mali miscompile hazard).
      */
     fun audit(sources: List<Pair<String, String>>): List<ShaderSafetyIssue> {
         val issues = mutableListOf<ShaderSafetyIssue>()
@@ -113,6 +133,27 @@ object ShaderSafety {
                                 "index [$expr] into sampler array '$sampler': $line")
                         }
                     }
+                }
+            }
+            // Pass 3: every for-loop trip count must be a compile-time
+            // constant. The bound may name only the loop variable itself
+            // and numeric literals; any other identifier (a uniform, a
+            // varying, another variable) makes the trip count dynamic,
+            // which several Mali drivers miscompile.
+            forLoop.findAll(code).forEach { m ->
+                val loopVar = m.groupValues[1]
+                val bound = m.groupValues[2]
+                val dynamic = identifier.findAll(bound)
+                    .map { it.value }
+                    .any { it != loopVar && it !in loopBoundKeywords }
+                if (dynamic) {
+                    val lineNumber =
+                        code.substring(0, m.range.first).count { it == '\n' } + 1
+                    val header = code.substring(m.range.first, m.range.last + 1)
+                        .replace('\n', ' ').trim()
+                    issues += ShaderSafetyIssue(name, lineNumber,
+                        "dynamic-loop-bound",
+                        "non-constant loop bound in: $header")
                 }
             }
         }

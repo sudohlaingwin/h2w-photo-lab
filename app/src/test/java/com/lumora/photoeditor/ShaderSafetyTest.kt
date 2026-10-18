@@ -114,6 +114,35 @@ class ShaderSafetyTest {
         assertTrue(ShaderSafety.audit(listOf("GOOD" to src)).isEmpty())
     }
 
+    @Test fun dynamic_loop_bound_is_flagged() {
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform int uCount;
+            void main() {
+                float s = 0.0;
+                for (int i = 0; i < uCount; i++) { s += float(i); }
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("DYNLOOP" to src))
+        assertTrue(issues.any { it.rule == "dynamic-loop-bound" })
+        assertTrue(issues.any { it.line.contains("uCount") })
+    }
+
+    @Test fun constant_loop_bounds_pass() {
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp vec3 uHsl[8];
+            void main() {
+                float s = 0.0;
+                for (int i = 0; i < 8; i++) { s += uHsl[i].x; }
+                for (int j = 8; j > 0; j--) { s -= float(j); }
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("CONSTLOOP" to src)).isEmpty())
+    }
+
     @Test fun commented_out_code_is_ignored() {
         val src = """
             #version 300 es
