@@ -136,22 +136,16 @@ fun ColorPanel(
                     val adj = c.forRange(range)
                     val active = adj != HslAdjust()
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // 48dp platform-minimum hit area: the 40dp swatch
+                        // visual stays unchanged, centered in the larger
+                        // tappable region. TalkBack: the visual label sits
+                        // below the swatch (not a descendant), so the hit
+                        // area itself announces a name, role and selected
+                        // state — without this it was an unnamed control.
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
-                                .background(hueColor(range))
-                                .border(
-                                    width = if (selected == range) 2.5.dp else 1.dp,
-                                    color = if (selected == range) Color.White
-                                    else Lumora.colors.divider,
-                                    shape = CircleShape,
-                                )
-                                // TalkBack: the visual label sits below the
-                                // swatch (not a descendant), so the swatch
-                                // itself announces a name, role and selected
-                                // state — without this it was an unnamed
-                                // control.
                                 .semantics(mergeDescendants = true) {
                                     contentDescription = "${range.label} hue range"
                                     this.selected = selected == range
@@ -160,13 +154,27 @@ fun ColorPanel(
                                     role = Role.Button,
                                     onClickLabel = "Select ${range.label}",
                                 ) { selected = range },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            if (active) {
-                                Box(
-                                    Modifier.align(Alignment.TopEnd).size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(Lumora.colors.accent),
-                                )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(hueColor(range))
+                                    .border(
+                                        width = if (selected == range) 2.5.dp else 1.dp,
+                                        color = if (selected == range) Color.White
+                                        else Lumora.colors.divider,
+                                        shape = CircleShape,
+                                    ),
+                            ) {
+                                if (active) {
+                                    Box(
+                                        Modifier.align(Alignment.TopEnd).size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(Lumora.colors.accent),
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(4.dp))

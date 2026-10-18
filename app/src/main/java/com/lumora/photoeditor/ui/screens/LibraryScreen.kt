@@ -1649,9 +1649,11 @@ private fun PhotoCell(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(6.dp)
-                    .size(34.dp)
+                    // 48dp platform-minimum hit area: the 34dp badge visual
+                    // stays unchanged, centered in the larger tappable region
+                    // so proofing marks stay easy to hit on a phone.
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color(0xAA000000))
                     .clickable(
                         role = Role.Button,
                         onClickLabel = "Cycle client mark",
@@ -1660,24 +1662,32 @@ private fun PhotoCell(
                     .semantics { contentDescription = "$badgeLabel. Tap to change." },
                 contentAlignment = Alignment.Center,
             ) {
-                when (proofMark) {
-                    ProofMark.APPROVED -> Icon(
-                        Icons.Default.CheckCircle, null,
-                        tint = Color(0xFF66BB6A),
-                        modifier = Modifier.size(20.dp),
-                    )
-                    ProofMark.REJECTED -> Icon(
-                        Icons.Default.Close, null,
-                        tint = Color(0xFFEF5350),
-                        modifier = Modifier.size(20.dp),
-                    )
-                    // Unmarked: an empty ring (RadioButtonUnchecked lives
-                    // in the extended icon set, which this app does not
-                    // ship — drawn instead).
-                    null -> Box(
-                        Modifier.size(20.dp)
-                            .border(2.dp, Color.White, CircleShape)
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xAA000000)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (proofMark) {
+                        ProofMark.APPROVED -> Icon(
+                            Icons.Default.CheckCircle, null,
+                            tint = Color(0xFF66BB6A),
+                            modifier = Modifier.size(20.dp),
+                        )
+                        ProofMark.REJECTED -> Icon(
+                            Icons.Default.Close, null,
+                            tint = Color(0xFFEF5350),
+                            modifier = Modifier.size(20.dp),
+                        )
+                        // Unmarked: an empty ring (RadioButtonUnchecked lives
+                        // in the extended icon set, which this app does not
+                        // ship — drawn instead).
+                        null -> Box(
+                            Modifier.size(20.dp)
+                                .border(2.dp, Color.White, CircleShape)
+                        )
+                    }
                 }
             }
         }
