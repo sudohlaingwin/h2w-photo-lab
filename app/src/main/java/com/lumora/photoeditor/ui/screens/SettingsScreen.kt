@@ -575,7 +575,8 @@ private fun AiKeySettings(container: AppContainer) {
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "The AI bubble (✨) appears in the editor only after a key is saved. " +
+        "The AI assistant bubble appears in the editor only after a key is " +
+            "saved. " +
             "Reinstalling the app clears the saved key — back it up so you can " +
             "restore it here in one tap. The backup file is plain text: keep it private.",
         style = type.caption, color = colors.textTertiary,
