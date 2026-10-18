@@ -527,7 +527,7 @@ private fun AiKeySettings(container: AppContainer) {
                                     msg = "Network error: ${e.message?.take(80)}"
                                 }
                             }
-                            if (ok) true to "Connected! Gemini is ready. ✓ ($usedModel)"
+                            if (ok) true to "Connected! Gemini is ready ($usedModel)"
                             else false to msg.ifBlank {
                                 com.lumora.photoeditor.ai.friendlyNoGeminiModelFound()
                             }
