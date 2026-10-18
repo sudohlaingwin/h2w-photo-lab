@@ -1058,10 +1058,49 @@ class GlEngine {
         return renderOffscreen(state, matrix, sizePx, sizePx, opts)
     }
 
+    /**
+     * Deletes every GL object this engine owns and zeroes the handles.
+     * Must run on the GL thread that owns the EGL context.
+     *
+     * Previously this deleted only the two shader programs, silently
+     * leaking all textures (~16 objects: source, blur chain, curves, 4
+     * mask + 4 despill, retouch, fx, export, 2 LUTs, dummy LUT), the 3
+     * FBOs and the quad VBO. Worse, the stale non-zero handles meant a
+     * later re-init/setSource could bind DELETED texture names —
+     * undefined behaviour that Mali drivers resolve with driver errors
+     * or crashes. Every handle here is lazily re-created (`== 0` guards
+     * in setSource/buildBlur/renderExport/uploadAiLut/uploadLookLut and
+     * unconditionally in init()), so an engine is fully reusable after
+     * release(). Safe to call twice: every id is guarded.
+     */
     fun release() {
-        // Best-effort cleanup; context teardown handles the rest.
+        val tex2d = (intArrayOf(srcTexture, blurTexA, blurTexB, curvesTex,
+            retouchTex, fxTexture, exportTex) + maskTextures + deconTextures)
+            .filter { it != 0 }.toIntArray()
+        if (tex2d.isNotEmpty()) GLES30.glDeleteTextures(tex2d.size, tex2d, 0)
+        val tex3d = intArrayOf(aiLutTex, lookLutTex, dummyLutTexId)
+            .filter { it != 0 }.toIntArray()
+        if (tex3d.isNotEmpty()) GLES30.glDeleteTextures(tex3d.size, tex3d, 0)
+        val fbos = intArrayOf(blurFboA, blurFboB, exportFbo)
+            .filter { it != 0 }.toIntArray()
+        if (fbos.isNotEmpty()) GLES30.glDeleteFramebuffers(fbos.size, fbos, 0)
+        if (quadVbo != 0) GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
         if (program != 0) GLES30.glDeleteProgram(program)
         if (blurProgram != 0) GLES30.glDeleteProgram(blurProgram)
+
+        srcTexture = 0; blurTexA = 0; blurTexB = 0; curvesTex = 0
+        retouchTex = 0; fxTexture = 0; exportTex = 0
+        maskTextures.fill(0); deconTextures.fill(0)
+        deconReady.fill(false)
+        blurFboA = 0; blurFboB = 0; exportFbo = 0
+        quadVbo = 0; program = 0; blurProgram = 0
+        aiLutTex = 0; aiLutReady = false; savedAiLut = null; savedAiLutN = 0
+        lookLutTex = 0; lookLutReady = false
+        savedLookLut = null; savedLookLutN = 0
+        dummyLutTexId = 0
+        srcW = 0; srcH = 0; blurW = 0; blurH = 0
+        uniforms.clear(); attribCache.clear()
+        blurUImage = -1; blurUDir = -1; blurURadius = -1
     }
 
     // ---------------------------------------------------------------
@@ -1174,14 +1213,25 @@ class GlEngine {
     }
 
     private fun linkProgram(vs: String, fs: String): Int? {
+        val vsh = compile(GLES30.GL_VERTEX_SHADER, vs)
+        val fsh = compile(GLES30.GL_FRAGMENT_SHADER, fs)
         val prog = GLES30.glCreateProgram()
-        GLES30.glAttachShader(prog, compile(GLES30.GL_VERTEX_SHADER, vs))
-        GLES30.glAttachShader(prog, compile(GLES30.GL_FRAGMENT_SHADER, fs))
+        GLES30.glAttachShader(prog, vsh)
+        GLES30.glAttachShader(prog, fsh)
         GLES30.glLinkProgram(prog)
+        // The program keeps its own copy after linking: detach and flag
+        // the shaders for deletion to free driver memory, and delete the
+        // program itself on link failure (the old code leaked all three
+        // GL objects on the failure path).
+        GLES30.glDetachShader(prog, vsh)
+        GLES30.glDetachShader(prog, fsh)
+        GLES30.glDeleteShader(vsh)
+        GLES30.glDeleteShader(fsh)
         val status = intArrayOf(0)
         GLES30.glGetProgramiv(prog, GLES30.GL_LINK_STATUS, status, 0)
         if (status[0] == 0) {
             android.util.Log.e("GlEngine", "link failed: " + GLES30.glGetProgramInfoLog(prog))
+            GLES30.glDeleteProgram(prog)
             return null
         }
         return prog
