@@ -489,9 +489,23 @@ class ExportManager(private val context: Context) {
         val resolver = context.contentResolver
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: return null
+        // openOutputStream can return null WITHOUT throwing (a revoked or
+        // wedged provider is a real case). The old code only cleaned up the
+        // pending entry on an exception, so a null stream left a zero-byte
+        // gallery item behind and the export claimed success. Bail out the
+        // same way for both: delete the entry, fail cleanly.
+        val out = try {
+            resolver.openOutputStream(uri)
+        } catch (e: Exception) {
+            null
+        }
+        if (out == null) {
+            runCatching { resolver.delete(uri, null, null) }
+            return null
+        }
         try {
-            resolver.openOutputStream(uri)?.use { out ->
-                tmp.inputStream().use { it.copyTo(out) }
+            out.use { o ->
+                tmp.inputStream().use { it.copyTo(o) }
             }
             if (Build.VERSION.SDK_INT >= 29) {
                 values.clear()
