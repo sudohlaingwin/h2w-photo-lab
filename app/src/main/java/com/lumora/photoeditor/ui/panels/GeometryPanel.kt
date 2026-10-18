@@ -227,7 +227,7 @@ fun GeometryPanel(
                 onClick = onStraighten,
             )
             Text(
-                "Tap two points on the photo along a line that should be level.",
+                "Tap two points or drag along a line on the photo that should be level.",
                 style = Lumora.type.caption,
                 color = Lumora.colors.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -247,7 +247,7 @@ fun GeometryPanel(
                 onClick = onPerspectiveGuide,
             )
             Text(
-                "Tap two points on the photo along a line that should be vertical.",
+                "Tap two points or drag along a line on the photo that should be vertical.",
                 style = Lumora.type.caption,
                 color = Lumora.colors.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -259,7 +259,7 @@ fun GeometryPanel(
                 onClick = onPerspectiveGuideH,
             )
             Text(
-                "Tap two points on the photo along a line that should be horizontal.",
+                "Tap two points or drag along a line on the photo that should be horizontal.",
                 style = Lumora.type.caption,
                 color = Lumora.colors.textTertiary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),

@@ -901,9 +901,20 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     /** State for a guided two-tap line (touch thread only). The straighten
      *  and perspective guides share the exact same tap interaction, so they
      *  each own a slot; the composable addresses the public delegating vars
-     *  below to clear a half-finished line when the mode is exited. */
+     *  below to clear a half-finished line when the mode is exited.
+     *
+     *  The line can also be DRAWN in one motion (press-drag-release,
+     *  Lightroom parity): on ACTION_DOWN the slot remembers [downUv]; if the
+     *  finger moves beyond touch slop, [p1] is anchored at the down point
+     *  (replacing any previously tapped dot) and [dragP2] tracks the finger,
+     *  so the overlay renders the line live. [downP1] remembers the p1 that
+     *  existed at DOWN time so a cancelled drag restores the prior dot
+     *  instead of losing it. */
     private class GuideSlot {
         var p1: Pt? = null
+        var downUv: Pt? = null
+        var downP1: Pt? = null
+        var dragP2: Pt? = null
         /** Returns true when the guide applied; false clears the half-drawn
          *  line so the next attempt starts clean (see handleTouch). */
         var onGuide: (p1: Pt, p2: Pt) -> Boolean = { _, _ -> true }
@@ -1024,8 +1035,9 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     }
 
     /** Reports a guided line's tap points (view pixels) for the overlay:
-     *  one dot after the first tap, both endpoints once the pair is
-     *  complete, null when there is no partial line. */
+     *  one dot after the first tap, a live line while the finger draws,
+     *  both endpoints once the pair is complete, null when there is no
+     *  partial line. */
     private fun reportGuideOverlay(slot: GuideSlot, mode: PreviewTouchMode) {
         val p1 = slot.p1
         if (touchMode != mode || p1 == null) {
@@ -1033,7 +1045,14 @@ private class GLView(context: Context) : GLSurfaceView(context) {
             return
         }
         val v1 = uvToViewPx(p1)
-        slot.onOverlay(if (v1 == null) null else listOf(Offset(v1.x, v1.y)))
+        val v2 = slot.dragP2?.let { uvToViewPx(it) }
+        slot.onOverlay(
+            when {
+                v1 == null -> null
+                v2 != null -> listOf(Offset(v1.x, v1.y), Offset(v2.x, v2.y))
+                else -> listOf(Offset(v1.x, v1.y))
+            }
+        )
     }
 
     fun setPendingFrame(frame: PendingFrame?) {
@@ -1468,9 +1487,11 @@ private class GLView(context: Context) : GLSurfaceView(context) {
             }
             return
         }
-        // Guided lines (straighten and perspective): two clean taps define a
-        // line that should be level (straighten) or vertical (perspective);
-        // a drag disqualifies, like the WB pick. Zoom/pan stay disabled.
+        // Guided lines (straighten and perspective): tap two points, or
+        // press-drag-release to draw the line in one motion (Lightroom
+        // parity). The line should be level (straighten) or run along an
+        // edge that should be vertical/horizontal (perspective).
+        // Zoom/pan stay disabled.
         val guideSlot = when (touchMode) {
             PreviewTouchMode.Straighten -> straightenSlot
             PreviewTouchMode.Perspective -> perspectiveSlot
@@ -1483,16 +1504,33 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                     guideSlot.downX = event.x
                     guideSlot.downY = event.y
                     guideSlot.moved = false
+                    guideSlot.downUv = touchToUv(event.x, event.y)
+                        .let { Pt(it.x.coerceIn(0f, 1f), it.y.coerceIn(0f, 1f)) }
+                    // remember the pre-touch p1 so a cancelled drag restores
+                    // a previously tapped dot instead of losing it
+                    guideSlot.downP1 = guideSlot.p1
+                    guideSlot.dragP2 = null
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (!guideSlot.moved &&
                         hypot(event.x - guideSlot.downX, event.y - guideSlot.downY) > touchSlopPx
-                    ) guideSlot.moved = true
+                    ) {
+                        guideSlot.moved = true
+                        // drag-draw: the down point anchors the line,
+                        // replacing any previously tapped dot
+                        guideSlot.p1 = guideSlot.downUv
+                    }
+                    if (guideSlot.moved) {
+                        guideSlot.dragP2 = touchToUv(event.x, event.y)
+                            .let { Pt(it.x.coerceIn(0f, 1f), it.y.coerceIn(0f, 1f)) }
+                        reportGuideOverlay(guideSlot, mode)
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!guideSlot.moved) {
-                        val uv = touchToUv(event.x, event.y)
-                            .let { Pt(it.x.coerceIn(0f, 1f), it.y.coerceIn(0f, 1f)) }
+                        val uv = guideSlot.downUv
+                            ?: touchToUv(event.x, event.y)
+                                .let { Pt(it.x.coerceIn(0f, 1f), it.y.coerceIn(0f, 1f)) }
                         val p1 = guideSlot.p1
                         if (p1 == null) {
                             guideSlot.p1 = uv
@@ -1522,9 +1560,41 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                                 guideSlot.onOverlay(null)
                             }
                         }
+                    } else {
+                        // drag-drawn line: release completes it
+                        val p1 = guideSlot.p1 ?: guideSlot.downUv
+                        val p2 = guideSlot.dragP2 ?: guideSlot.downUv
+                        guideSlot.p1 = null
+                        guideSlot.dragP2 = null
+                        if (p1 != null && p2 != null) {
+                            val v1 = uvToViewPx(p1); val v2 = uvToViewPx(p2)
+                            val line = if (v1 != null && v2 != null)
+                                listOf(Offset(v1.x, v1.y), Offset(v2.x, v2.y))
+                            else null
+                            if (guideSlot.onGuide(p1, p2)) {
+                                // show the finished line for the frame(s)
+                                // until the editor exits the guide mode
+                                if (line != null) guideSlot.onOverlay(line)
+                            } else {
+                                // Too-short drag or unsolvable line: clear
+                                // everything (the host explains via notice).
+                                guideSlot.onOverlay(null)
+                            }
+                        } else {
+                            guideSlot.onOverlay(null)
+                        }
                     }
                 }
-                MotionEvent.ACTION_CANCEL -> { /* no-op */ }
+                MotionEvent.ACTION_CANCEL -> {
+                    // Only undo what this touch did: a cancelled drag drops
+                    // the live line and restores the pre-touch dot (if any);
+                    // a cancelled tap never committed anything.
+                    if (guideSlot.moved) {
+                        guideSlot.p1 = guideSlot.downP1
+                        guideSlot.dragP2 = null
+                        reportGuideOverlay(guideSlot, mode)
+                    }
+                }
             }
             return
         }

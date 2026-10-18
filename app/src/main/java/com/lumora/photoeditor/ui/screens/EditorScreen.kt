@@ -1226,12 +1226,12 @@ private fun ActiveToolChip(
         hslPickActive -> "Tap a color in the photo to target it"
         straightenActive -> if (guideHasFirstPoint)
             "Now tap a second point on the same line — or tap the dot again to start over"
-        else "Grid shows level — tap two points on a line that should be level"
+        else "Grid shows level — tap two points or drag along a line that should be level"
         perspectiveActive -> if (guideHasFirstPoint)
             "Now tap a second point on the same line — or tap the dot again to start over"
         else if (perspectiveAxis == PerspectiveAxis.Horizontal)
-            "Tap two points on a line that should be horizontal"
-        else "Tap two points on a line that should be vertical"
+            "Tap two points or drag along a line that should be horizontal"
+        else "Tap two points or drag along a line that should be vertical"
         splitActive -> "Drag the divider to compare — tap the compare icon to exit"
         focusActive -> "Drag on the photo to move the lens-blur focus point"
         curveTargetActive -> "Drag up or down on the photo to bend the curve at that tone"
