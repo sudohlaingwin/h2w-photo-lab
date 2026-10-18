@@ -536,6 +536,21 @@ fun EditorGlView(
                 val anyOob = oob.any { it }
                 val warn = Color(0xFFFFB300)
                 val frameColor = if (anyOob) warn else Color.White
+                // Density-aware handle sizes: the frame and corner ticks were
+                // drawn in fixed pixels, so on high-density phones (his vivo
+                // V60 ~2.4x) the visible ticks shrank to ~12dp while the touch
+                // targets (cropHandleFor) are a generous 30dp — handles looked
+                // tiny next to what the finger could actually grab. Scale every
+                // handle constant to dp, floored at the old pixel value so
+                // mdpi screens render exactly what they had before.
+                val tickLen = 18.dp.toPx().coerceAtLeast(30f)
+                val tickStroke = 2.dp.toPx().coerceAtLeast(4f)
+                val tickHalo = 3.5.dp.toPx().coerceAtLeast(7f)
+                val frameStroke = 1.5.dp.toPx().coerceAtLeast(2f)
+                val frameHalo = 2.5.dp.toPx().coerceAtLeast(5f)
+                val triSize = 13.dp.toPx().coerceAtLeast(22f)
+                val triOffset = 26.dp.toPx().coerceAtLeast(44f)
+                val triHalo = 4.dp.toPx().coerceAtLeast(8f)
                 // dim everything outside the quad
                 val dim = Path().apply {
                     fillType = PathFillType.EvenOdd
@@ -578,8 +593,8 @@ fun EditorGlView(
                     lineTo(q[2].x, q[2].y)
                     close()
                 }
-                drawPath(framePath, Color.Black.copy(alpha = 0.55f), style = Stroke(5f))
-                drawPath(framePath, frameColor, style = Stroke(2f))
+                drawPath(framePath, Color.Black.copy(alpha = 0.55f), style = Stroke(frameHalo))
+                drawPath(framePath, frameColor, style = Stroke(frameStroke))
                 // corner ticks: short L segments from each corner along
                 // both edges, white (amber on out-of-bounds corners) with
                 // a dark halo
@@ -587,9 +602,9 @@ fun EditorGlView(
                     val dx = toward.x - from.x; val dy = toward.y - from.y
                     val len = hypot(dx, dy)
                     if (len < 1f) return
-                    val end = Offset(from.x + dx / len * 30f, from.y + dy / len * 30f)
-                    drawLine(Color.Black.copy(alpha = 0.55f), from, end, strokeWidth = 7f)
-                    drawLine(color, from, end, strokeWidth = 4f)
+                    val end = Offset(from.x + dx / len * tickLen, from.y + dy / len * tickLen)
+                    drawLine(Color.Black.copy(alpha = 0.55f), from, end, strokeWidth = tickHalo)
+                    drawLine(color, from, end, strokeWidth = tickStroke)
                 }
                 fun tickColor(i: Int) = if (oob[i]) warn else Color.White
                 tick(q[0], q[1], tickColor(0)); tick(q[0], q[2], tickColor(0))
@@ -607,15 +622,15 @@ fun EditorGlView(
                         if (!bad) return@forEachIndexed
                         val d = center - q[i]
                         val len = d.getDistance()
-                        val pos = if (len > 1f) q[i] + d / len * 44f else q[i]
-                        val s = 22f
+                        val pos = if (len > 1f) q[i] + d / len * triOffset else q[i]
+                        val s = triSize
                         val tri = Path().apply {
                             moveTo(pos.x, pos.y - s)
                             lineTo(pos.x - s * 0.9f, pos.y + s * 0.65f)
                             lineTo(pos.x + s * 0.9f, pos.y + s * 0.65f)
                             close()
                         }
-                        drawPath(tri, Color.Black.copy(alpha = 0.55f), style = Stroke(8f))
+                        drawPath(tri, Color.Black.copy(alpha = 0.55f), style = Stroke(triHalo))
                         drawPath(tri, warn)
                     }
                 }
@@ -1276,28 +1291,52 @@ private class GLView(context: Context) : GLSurfaceView(context) {
         }
     }
 
-    /** Pick the crop handle nearest to the touch UV: corners, edges, or whole-rect move. */
-    private fun cropHandleFor(crop: CropParams, u: Float, v: Float): CropHandle {
-        val cornerTol = 0.06f
+    /** Pick the crop handle nearest to the touch point, hit-tested in VIEW
+     *  PIXELS against the geometry-transformed crop quad (the same quad the
+     *  overlay draws, so rotated/perspectived crops hit-test correctly).
+     *  The old fixed UV fractions (0.06 corners / 0.03 edges) shrank to a
+     *  few screen pixels after pinch-to-zoom — and the crop hint chip tells
+     *  users to "pinch to zoom in" — so handles became ungrabbable exactly
+     *  when precision mattered most. View-pixel targets stay a constant
+     *  finger-friendly size at any zoom. [xPx]/[yPx] are view pixels
+     *  (event.x / event.y). */
+    private fun cropHandleFor(crop: CropParams, xPx: Float, yPx: Float): CropHandle {
+        val geo = pending?.state?.geometry ?: return CropHandle.None
+        val quad = Geometry.transformedQuad(crop, geo).mapNotNull { uvToViewPx(it) }
+        if (quad.size != 4) return CropHandle.None
+        val d = resources.displayMetrics.density
+        val cornerR = 30f * d
+        val edgeR = 20f * d
+        // Corners first: largest target wins; Chebyshev distance as before.
+        // quad order is TL, TR, BL, BR.
         val corners = arrayOf(
-            CropHandle.TL to Pt(crop.left, crop.top),
-            CropHandle.TR to Pt(crop.right, crop.top),
-            CropHandle.BL to Pt(crop.left, crop.bottom),
-            CropHandle.BR to Pt(crop.right, crop.bottom),
+            CropHandle.TL to quad[0], CropHandle.TR to quad[1],
+            CropHandle.BL to quad[2], CropHandle.BR to quad[3],
         )
         var best = CropHandle.None
         var bestD = Float.MAX_VALUE
         for ((h, p) in corners) {
-            val d = max(abs(u - p.x), abs(v - p.y))
-            if (d < cornerTol && d < bestD) { best = h; bestD = d }
+            val dist = max(abs(xPx - p.x), abs(yPx - p.y))
+            if (dist < cornerR && dist < bestD) { best = h; bestD = dist }
         }
         if (best != CropHandle.None) return best
-        val edgeTol = 0.03f
-        if (abs(u - crop.left) < edgeTol && v >= crop.top && v <= crop.bottom) return CropHandle.L
-        if (abs(u - crop.right) < edgeTol && v >= crop.top && v <= crop.bottom) return CropHandle.R
-        if (abs(v - crop.top) < edgeTol && u >= crop.left && u <= crop.right) return CropHandle.T
-        if (abs(v - crop.bottom) < edgeTol && u >= crop.left && u <= crop.right) return CropHandle.B
-        if (u >= crop.left && u <= crop.right && v >= crop.top && v <= crop.bottom) return CropHandle.Move
+        // Edges: the visible frame is a 1px line, so each edge gets a band
+        // target around the quad's 4 edge segments.
+        val edges = arrayOf(
+            CropHandle.L to (quad[0] to quad[2]),
+            CropHandle.T to (quad[0] to quad[1]),
+            CropHandle.R to (quad[1] to quad[3]),
+            CropHandle.B to (quad[2] to quad[3]),
+        )
+        var bestEdge = CropHandle.None
+        var bestEdgeD = Float.MAX_VALUE
+        for ((h, e) in edges) {
+            val dist = Geometry.distToSegment(xPx, yPx, e.first, e.second)
+            if (dist < edgeR && dist < bestEdgeD) { bestEdge = h; bestEdgeD = dist }
+        }
+        if (bestEdge != CropHandle.None) return bestEdge
+        // Inside the quad: drag moves the whole rect.
+        if (Geometry.pointInQuad(xPx, yPx, quad)) return CropHandle.Move
         return CropHandle.None
     }
 
@@ -1582,7 +1621,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                         cropHandle = CropHandle.None
                         return
                     }
-                    cropHandle = cropHandleFor(crop, uv.x, uv.y)
+                    cropHandle = cropHandleFor(crop, event.x, event.y)
                     if (cropHandle == CropHandle.None) return
                     cropStart = crop
                     cropStartUv = uv

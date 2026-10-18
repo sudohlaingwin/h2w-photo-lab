@@ -109,6 +109,43 @@ object Geometry {
             it.x < -eps || it.x > 1f + eps || it.y < -eps || it.y > 1f + eps
         }
 
+    /** Distance from point (px, py) to the segment a -> b. All coordinates
+     *  must be in the same space (the crop overlay hit-tests in view
+     *  pixels). Pure math, no Android dependency — covered by the
+     *  standalone kotlinc harness. */
+    fun distToSegment(px: Float, py: Float, a: Pt, b: Pt): Float {
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len2 = dx * dx + dy * dy
+        if (len2 < 1e-9f) return hypot(px - a.x, py - a.y)
+        val t = (((px - a.x) * dx + (py - a.y) * dy) / len2).coerceIn(0f, 1f)
+        return hypot(px - (a.x + t * dx), py - (a.y + t * dy))
+    }
+
+    /** Point-in-convex-quad test. [quad] must be in TL, TR, BL, BR order
+     *  (the order [transformedQuad] returns), so polygon order is
+     *  0 -> 1 -> 3 -> 2. Rotation, flips and the perspective taper all
+     *  preserve convexity, so a consistent cross-product sign means inside;
+     *  points exactly on an edge count as inside. Pure math, no Android
+     *  dependency — covered by the standalone kotlinc harness. */
+    fun pointInQuad(px: Float, py: Float, quad: List<Pt>): Boolean {
+        if (quad.size != 4) return false
+        val o = listOf(quad[0], quad[1], quad[3], quad[2])
+        var sign = 0
+        for (i in o.indices) {
+            val a = o[i]
+            val b = o[(i + 1) % o.size]
+            val cross = (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x)
+            val s = when {
+                cross > 1e-4f -> 1
+                cross < -1e-4f -> -1
+                else -> continue
+            }
+            if (sign == 0) sign = s else if (sign != s) return false
+        }
+        return true
+    }
+
     private fun scaleAboutCenter(crop: CropParams, s: Float): CropParams {
         val cx = (crop.left + crop.right) / 2f; val cy = (crop.top + crop.bottom) / 2f
         val hw = (crop.right - crop.left) / 2f * s; val hh = (crop.bottom - crop.top) / 2f * s
