@@ -1953,6 +1953,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 val key = "ai_${UUID.randomUUID()}"
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 val historyLabel = when (op) {
                     MaskOp.SUBTRACT -> "Subtract from mask"
                     MaskOp.INTERSECT -> "Intersect with mask"
@@ -1995,6 +1997,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 val key = "ai_${UUID.randomUUID()}"
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 val maskId = addMask(kind, label)
                 // "Background AI" selects everything that is NOT the subject:
                 // the same stored raster, inverted shader-side (the mask
@@ -2175,6 +2179,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         bmp, comp.lumaLo, comp.lumaHi, comp.lumaFeather)
                 }
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 requestRender()
             } catch (t: Throwable) {
                 android.util.Log.w("EditorVM", "luminance refresh failed", t)
@@ -2230,6 +2236,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         bmp, comp.depthLo, comp.depthHi, comp.depthFeather)
                 }
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 requestRender()
             } catch (t: Throwable) {
                 android.util.Log.w("EditorVM", "depth refresh failed", t)
@@ -2266,6 +2274,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     bmp, r, g, b, defaultColorTolerance, defaultColorFeather)
                 val key = "ai_${UUID.randomUUID()}"
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 val maskId = addMask(MaskType.COLOR_RANGE, "Color range")
                 updateMask(maskId, "Color range mask") { m ->
                     m.copy(components = listOf(MaskComponent(
@@ -2301,6 +2311,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     bmp, r, g, b, defaultColorTolerance, defaultColorFeather)
                 val key = "ai_${UUID.randomUUID()}"
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 val historyLabel = when (op) {
                     MaskOp.SUBTRACT -> "Subtract from mask"
                     MaskOp.INTERSECT -> "Intersect with mask"
@@ -2379,6 +2391,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         comp.colorTolerance, comp.colorFeather)
                 }
                 withContext(Dispatchers.IO) { container.aiMasks.save(key, raster) }
+                // Raster is now safely stored; release the working copy.
+                if (!raster.isRecycled) raster.recycle()
                 requestRender()
             } catch (t: Throwable) {
                 android.util.Log.w("EditorVM", "color range refresh failed", t)
@@ -3647,6 +3661,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     withContext(Dispatchers.IO) {
                         container.aiMasks.save(aiKey, skinMask)
                     }
+                    // Raster is now safely stored; release the working copy.
+                    if (!skinMask.isRecycled) skinMask.recycle()
                     withContext(Dispatchers.Main) {
                         val skinComp = MaskComponent(
                             id = compId,
@@ -3890,6 +3906,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     withContext(Dispatchers.IO) {
                         container.aiMasks.save(aiKey, skinMask)
                     }
+                    // Raster is now safely stored; release the working copy.
+                    if (!skinMask.isRecycled) skinMask.recycle()
                     val skinComp = MaskComponent(
                         id = UUID.randomUUID().toString(),
                         type = MaskType.AI_SKIN,  // dedicated skin-raster type (aiKey lookup)
@@ -4116,6 +4134,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 if (skinFound && skinMask != null) {
                     val aiKey = "beauty_${UUID.randomUUID()}"
                     withContext(Dispatchers.IO) { container.aiMasks.save(aiKey, skinMask) }
+                    // Raster is now safely stored; release the working copy.
+                    if (!skinMask.isRecycled) skinMask.recycle()
                     // Stronger styles also even skin tone (shadows lift).
                     val toneEven = if (style == BeautyStyle.FASHION || style == BeautyStyle.GLAMOUR) 12f else 0f
                     update("Beauty skin ${style.name.lowercase()}") { s ->
@@ -4219,6 +4239,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val aiKey = maskSpec?.let {
                     val key = "prompt_${UUID.randomUUID()}"
                     withContext(Dispatchers.IO) { container.aiMasks.save(key, it.raster) }
+                    // Raster is now safely stored; release the working copy.
+                    if (!it.raster.isRecycled) it.raster.recycle()
                     key
                 }
                 val maskId = UUID.randomUUID().toString()

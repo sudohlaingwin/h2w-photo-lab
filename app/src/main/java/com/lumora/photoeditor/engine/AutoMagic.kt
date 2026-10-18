@@ -91,6 +91,9 @@ object AutoRetouch {
      * Builds a skin mask bitmap (white = skin, black = not skin).
      * Uses YCrCb skin-tone ellipsoid heuristic.
      * @param feather 0..1 softness of mask edges
+     * @return a NEW bitmap. The caller owns it and must recycle() it when
+     * done (after it has been persisted via [AiMaskStore.save], which
+     * copies the pixels).
      */
     fun skinMask(bmp: Bitmap, feather: Float = 0.5f): Bitmap {
         val w = bmp.width; val h = bmp.height
