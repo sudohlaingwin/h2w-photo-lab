@@ -76,8 +76,7 @@ class GeminiClient {
             }
 
                 val response = json.decodeFromString(GeminiResponse.serializer(), responseText)
-                val text = response.candidates.firstOrNull()
-                    ?.content?.parts?.firstOrNull()?.text
+                val text = responseTextOf(response)
                     ?: return@withContext Result.Failure("Empty response from Gemini")
 
                 val suggestions = try {
@@ -96,6 +95,19 @@ class GeminiClient {
             Result.Failure("Network error: ${e.message?.take(150) ?: "unknown"}")
         }
     }
+
+    /**
+     * Concatenates the text of every part of the first content-bearing
+     * candidate. The API can split a reply across multiple parts (longer
+     * outputs); reading only parts.first() truncated the suggestions JSON
+     * and surfaced as "Could not parse AI suggestions" (2026-10-18).
+     * Single-part replies behave exactly as before.
+     */
+    private fun responseTextOf(response: GeminiResponse): String? =
+        response.candidates.firstNotNullOfOrNull { it.content }
+            ?.parts?.mapNotNull { it.text }
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString("")
 
     /**
      * Free-text chat without an image (follow-up questions).
@@ -144,8 +156,7 @@ class GeminiClient {
                 return@withContext Result.Failure("Gemini API error: $errMsg")
             }
                 val response = json.decodeFromString(GeminiResponse.serializer(), responseText)
-                val text = response.candidates.firstOrNull()
-                    ?.content?.parts?.firstOrNull()?.text
+                val text = responseTextOf(response)
                     ?: return@withContext Result.Failure("Empty response from Gemini")
                 // Wrap free-text reply as suggestions with only analysis filled.
                 Result.Success(AiSuggestions(analysis = text), text)
