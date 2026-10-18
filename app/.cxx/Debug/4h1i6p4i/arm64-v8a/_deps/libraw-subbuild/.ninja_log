@@ -1,0 +1,21 @@
+# ninja log v5
+3031	3037	1792244750799251576	CMakeFiles/libraw-populate-complete	1d9e8f5abb5d3509
+3011	3016	1792244750778251575	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-configure	81719eca09b3f9e1
+3016	3021	1792244750783251576	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-build	778bf98eb440be8c
+3031	3037	1792244750799251576	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/CMakeFiles/libraw-populate-complete	1d9e8f5abb5d3509
+3016	3021	1792244750783251576	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-build	778bf98eb440be8c
+3011	3016	1792244750778251575	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-configure	81719eca09b3f9e1
+3007	3011	1792244750773251575	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-patch	14c356023e6b2052
+10	3000	1792244750762251575	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-download	355bfdc430d28710
+3031	3037	1792244750799251576	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-done	1d9e8f5abb5d3509
+3007	3011	1792244750773251575	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-patch	14c356023e6b2052
+3021	3026	1792244750788251576	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-install	99089a6d18906852
+3026	3030	1792244750792251576	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-test	9103466146a6b894
+3021	3026	1792244750788251576	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-install	99089a6d18906852
+10	3000	1792244750762251575	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-download	355bfdc430d28710
+0	10	1792244747772251459	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-mkdir	19de7ebb6bc8669b
+0	10	1792244747772251459	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-mkdir	19de7ebb6bc8669b
+3026	3030	1792244750792251576	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-test	9103466146a6b894
+3031	3037	1792244750799251576	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-done	1d9e8f5abb5d3509
+3000	3007	1792244750769251575	/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-update	9d8cc0b6f439ca8c
+3000	3007	1792244750769251575	libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-update	9d8cc0b6f439ca8c

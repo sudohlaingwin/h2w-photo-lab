@@ -1,0 +1,1 @@
+/home/hatch/workspace/android/lumora/app/src/main/cpp/CMakeLists.txt

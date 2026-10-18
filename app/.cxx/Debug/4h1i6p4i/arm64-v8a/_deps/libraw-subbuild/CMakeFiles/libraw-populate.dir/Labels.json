@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/CMakeFiles/libraw-populate"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/CMakeFiles/libraw-populate.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/CMakeFiles/libraw-populate-complete.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-build.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-configure.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-download.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-install.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-patch.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-test.rule"
+		},
+		{
+			"file" : "/home/hatch/workspace/android/lumora/app/.cxx/Debug/4h1i6p4i/arm64-v8a/_deps/libraw-subbuild/libraw-populate-prefix/src/libraw-populate-stamp/libraw-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"libraw-populate"
+		],
+		"name" : "libraw-populate"
+	}
+}

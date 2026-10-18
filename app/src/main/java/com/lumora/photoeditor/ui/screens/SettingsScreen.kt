@@ -1,0 +1,665 @@
+package com.lumora.photoeditor.ui.screens
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import com.lumora.photoeditor.R
+import com.lumora.photoeditor.core.AppContainer
+import com.lumora.photoeditor.ui.components.LumoraButton
+import com.lumora.photoeditor.ui.components.LumoraOutlineButton
+import com.lumora.photoeditor.ui.components.LumoraSwitch
+import com.lumora.photoeditor.ui.components.LumoraTextField
+import com.lumora.photoeditor.ui.components.LumoraTopBar
+import com.lumora.photoeditor.ui.components.SegmentedControl
+import com.lumora.photoeditor.ui.components.ToolbarButton
+import com.lumora.photoeditor.ui.components.LumoraTextButton
+import com.lumora.photoeditor.ui.components.LumoraProgressIndicator
+import com.lumora.photoeditor.ui.theme.Lumora
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    container: AppContainer,
+    onBack: () -> Unit,
+    onReplayTour: () -> Unit = {},
+) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    val settings = container.settings
+    val themeMode by settings.themeMode.collectAsState()
+    val previewQuality by settings.previewQuality.collectAsState()
+    val showOverlay by settings.showMaskOverlay.collectAsState()
+    val haptics by settings.haptics.collectAsState()
+    val gridColumns by settings.libraryGridColumns.collectAsState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var cacheSize by remember { mutableStateOf("…") }
+
+    LaunchedEffect(Unit) {
+        cacheSize = withContext(Dispatchers.IO) {
+            val bytes = container.context.cacheDir.walkTopDown().filter { it.isFile }
+                .sumOf { it.length() }
+            when {
+                bytes > 1_000_000 -> "%.1f MB".format(bytes / 1_000_000.0)
+                bytes > 1_000 -> "%.0f KB".format(bytes / 1_000.0)
+                else -> "$bytes B"
+            }
+        }
+    }
+
+    Scaffold(
+        containerColor = colors.background,
+        topBar = {
+            LumoraTopBar(
+                title = "Settings",
+                navigationIcon = {
+                    ToolbarButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            SettingGroup("Appearance") {
+                Text("Theme", style = type.controlLabel, color = colors.textPrimary)
+                Spacer(Modifier.height(8.dp))
+                SegmentedControl(
+                    options = listOf(0 to "System", 1 to "Dark", 2 to "Light"),
+                    selected = themeMode,
+                    onSelect = settings::setThemeMode,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            SettingGroup("Pro / License") {
+                LicenseSettingsSection(container = container)
+            }
+            SettingGroup("AI Assistant") {
+                AiKeySettings(container = container)
+            }
+            SettingGroup("Cloud sync") {
+                SyncSettingsSection(container = container)
+            }
+            SettingGroup("Preview") {                Text("Preview quality", style = type.controlLabel, color = colors.textPrimary)
+                Spacer(Modifier.height(8.dp))
+                SegmentedControl(
+                    options = listOf(0 to "Balanced", 1 to "High"),
+                    selected = previewQuality,
+                    onSelect = settings::setPreviewQuality,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text("Balanced renders faster on older devices.",
+                    style = type.caption, color = colors.textTertiary)
+                Spacer(Modifier.height(12.dp))
+                SwitchRow("Show mask overlay",
+                    "Tint the selected mask in red while editing.",
+                    showOverlay, settings::setShowMaskOverlay)
+                SwitchRow("Haptic feedback",
+                    "Subtle vibration on slider resets and tool changes.",
+                    haptics, settings::setHaptics)
+            }
+            SettingGroup("Library") {
+                Text("Grid columns", style = type.controlLabel, color = colors.textPrimary)
+                Spacer(Modifier.height(8.dp))
+                SegmentedControl(
+                    options = listOf(2 to "2", 3 to "3", 4 to "4", 5 to "5"),
+                    selected = gridColumns,
+                    onSelect = settings::setLibraryGridColumns,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text("How many photo columns the library grid shows. You can " +
+                    "also pinch the grid itself to zoom in and out.",
+                    style = type.caption, color = colors.textTertiary)
+            }
+            SettingGroup("Storage") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Temporary files", style = type.controlLabel,
+                            color = colors.textPrimary)
+                        Text("$cacheSize of export/render cache",
+                            style = type.caption, color = colors.textTertiary)
+                    }
+                    LumoraOutlineButton(
+                        onClick = {
+                            scope.launch(Dispatchers.IO) {
+                                container.context.cacheDir.deleteRecursively()
+                                container.context.cacheDir.mkdirs()
+                                cacheSize = "0 B"
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text("Clear", color = colors.textPrimary) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Your photos and edits are never deleted by clearing the cache. " +
+                    "Originals stay untouched in your gallery.",
+                    style = type.caption, color = colors.textTertiary)
+            }
+            SettingGroup("About") {
+                Text("H2W Photo Lab 1.0.0", style = type.controlLabel, color = colors.textPrimary)
+                Text("Non-destructive photo editor. Originals are never modified; " +
+                    "edits live in sidecar files and can be undone any time.",
+                    style = type.caption, color = colors.textTertiary)
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Welcome tour", style = type.controlLabel,
+                            color = colors.textPrimary)
+                        Text("Replay the first-run introduction.",
+                            style = type.caption, color = colors.textTertiary)
+                    }
+                    LumoraOutlineButton(
+                        onClick = onReplayTour,
+                        shape = RoundedCornerShape(10.dp),
+                    ) { Text("Replay", color = colors.textPrimary) }
+                }
+            }
+            DeveloperRow()
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun DeveloperRow() {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    var showPopup by remember { mutableStateOf(false) }
+
+    // Compact tappable row
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.panel)
+            .clickable { showPopup = true }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.developer_bg),
+            contentDescription = "Htay Hlaing Win",
+            modifier = Modifier.size(48.dp).clip(CircleShape),
+            contentScale = ContentScale.Crop,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("DEVELOPER", style = Lumora.type.sectionTitle, color = colors.textSecondary)
+            Spacer(Modifier.height(2.dp))
+            Text("Htay Hlaing Win", style = type.controlLabel, color = colors.textPrimary)
+        }
+        Text("View", style = type.body, color = colors.accent)
+    }
+
+    // Animated popup dialog
+    if (showPopup) {
+        DeveloperPopup(onDismiss = { showPopup = false })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeveloperPopup(onDismiss: () -> Unit) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    val context = LocalContext.current
+
+    // Scale + fade entrance animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.85f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 320f),
+        label = "popupScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(220),
+        label = "popupAlpha",
+    )
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            this.alpha = alpha
+        },
+    ) {
+        Box(
+            Modifier.widthIn(max = 340.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(colors.panel),
+        ) {
+            // Background photo with reduced opacity
+            Image(
+                painter = painterResource(R.drawable.developer_bg),
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.16f,
+            )
+            Column(
+                Modifier.fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.developer_bg),
+                    contentDescription = "Htay Hlaing Win",
+                    modifier = Modifier.size(96.dp).clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Htay Hlaing Win",
+                    style = type.screenTitle, color = colors.textPrimary)
+                Spacer(Modifier.height(4.dp))
+                Text("App Developer",
+                    style = type.body, color = colors.textSecondary)
+                Spacer(Modifier.height(16.dp))
+                // Facebook button
+                LumoraButton(
+                    onClick = {
+                        val intent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://www.facebook.com/share/1HdRKfwsMs/"),
+                        )
+                        context.startActivity(intent)
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1877F2),
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_facebook),
+                        contentDescription = "Facebook",
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Facebook Profile")
+                }
+                Spacer(Modifier.height(8.dp))
+                LumoraTextButton(onClick = onDismiss) {
+                    Text("Close", color = colors.textSecondary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    val colors = Lumora.colors
+    Column(
+        Modifier.fillMaxWidth()
+            .background(colors.panel, RoundedCornerShape(14.dp))
+            .padding(16.dp),
+    ) {
+        Text(title.uppercase(), style = Lumora.type.sectionTitle, color = colors.textSecondary)
+        Spacer(Modifier.height(12.dp))
+        content()
+    }
+}
+
+/**
+ * Gemini API key settings for the AI Photo Assistant.
+ * The key is stored app-private on this device only.
+ */
+@Composable
+private fun AiKeySettings(container: AppContainer) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    val context = LocalContext.current
+    val keyStore = remember { com.lumora.photoeditor.ai.AiKeyStore(context) }
+    var keyInput by remember { mutableStateOf("") }
+    var hasKey by remember { mutableStateOf(keyStore.hasKey()) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    var testOk by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Text(
+        "Connect Gemini to get AI editing suggestions in the editor. " +
+            "Get a free key at aistudio.google.com.",
+        style = type.caption, color = colors.textTertiary,
+    )
+    Spacer(Modifier.height(8.dp))
+
+    if (hasKey) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "✓ API key saved",
+                style = type.controlLabel, color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            LumoraTextButton(onClick = {
+                keyStore.clearGeminiKey()
+                hasKey = false
+                testResult = null
+            }) { Text("Remove", color = colors.textSecondary) }
+        }
+    } else {
+        LumoraTextField(
+            value = keyInput,
+            onValueChange = { keyInput = it; testResult = null },
+            label = "Gemini API key",
+            placeholder = "Paste Gemini API key (AIza…)",
+            isPassword = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        LumoraButton(
+            onClick = {
+                if (keyInput.isNotBlank()) {
+                    keyStore.setGeminiKey(keyInput.trim())
+                    keyInput = ""
+                    hasKey = true
+                    testResult = null
+                }
+            },
+            enabled = keyInput.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Save API Key") }
+    }
+
+    if (hasKey) {
+        Spacer(Modifier.height(8.dp))
+        LumoraOutlineButton(
+            onClick = {
+                testing = true
+                testResult = null
+                // Minimal test via raw HTTP (no ViewModel here)
+                scope.launch(Dispatchers.IO) {
+                    val result = try {
+                        val key = keyStore.getGeminiKey()
+                        if (key == null) false to "No key saved"
+                        else {
+                            // Discover which models this key can actually use;
+                            // fall back to the hardcoded list when discovery fails.
+                            // 404 means deprecated, try next.
+                            val geminiClient = com.lumora.photoeditor.ai.GeminiClient()
+                            val models = (geminiClient.resolveModels(key) +
+                                com.lumora.photoeditor.ai.GeminiClient.MODELS).distinct()
+                            var ok = false
+                            var msg = ""
+                            var usedModel = ""
+                            for (model in models) {
+                                try {
+                                    val url = java.net.URL(
+                                        "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+                                    )
+                                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                                        requestMethod = "POST"
+                                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                                        setRequestProperty("x-goog-api-key", key)
+                                        connectTimeout = 15_000
+                                        readTimeout = 15_000
+                                        doOutput = true
+                                    }
+                                    conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+                                        it.write("""{"contents":[{"parts":[{"text":"Say OK"}]}]}""")
+                                    }
+                                    val code = conn.responseCode
+                                    val body = try {
+                                        conn.inputStream.bufferedReader().readText().take(150)
+                                    } catch (_: Exception) {
+                                        conn.errorStream?.bufferedReader()?.readText()?.take(250) ?: ""
+                                    }
+                                    conn.disconnect()
+                                    if (code in 200..299) {
+                                        ok = true; usedModel = model
+                                        break
+                                    } else if (code == 404) {
+                                        msg = "HTTP $code: ${body.take(120)}"
+                                        continue // try next model
+                                    } else if (code == 429) {
+                                        msg = "Quota exceeded (429): your Gemini free quota is used up. Check your plan at aistudio.google.com — free quota resets daily."
+                                        break
+                                    } else {
+                                        msg = "HTTP $code: ${body.take(120)}"
+                                        break
+                                    }
+                                } catch (e: Exception) {
+                                    if (e is CancellationException) throw e // don't swallow coroutine cancellation
+                                    msg = "Network error: ${e.message?.take(80)}"
+                                }
+                            }
+                            if (ok) true to "Connected! Gemini is ready. ✓ ($usedModel)"
+                            else false to msg
+                        }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e // don't swallow coroutine cancellation
+                        false to "Network error: ${e.message?.take(80)}"
+                    }
+                    withContext(Dispatchers.Main) {
+                        testing = false
+                        testOk = result.first
+                        testResult = result.second
+                    }
+                }
+            },
+            enabled = !testing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (testing) {
+                LumoraProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Testing…")
+            } else {
+                Text("Test Connection")
+            }
+        }
+    }
+
+    testResult?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            it,
+            style = type.caption,
+            color = if (testOk) colors.textPrimary else colors.danger,
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "The AI bubble (✨) appears in the editor only after a key is saved.",
+        style = type.caption, color = colors.textTertiary,
+    )
+}
+
+@Composable
+private fun LicenseSettingsSection(container: AppContainer) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    val store = container.licenseStore
+    val status by store.status.collectAsState()
+    var showPaywall by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { store.refresh() }
+
+    StatusRow(
+        "Status",
+        com.lumora.photoeditor.data.billing.licenseStatusText(status),
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        when (status) {
+            is com.lumora.photoeditor.data.billing.LicenseStatus.Trial ->
+                "The trial covers every feature — nothing is locked. " +
+                    "The Pro screen is ready for the future store."
+            com.lumora.photoeditor.data.billing.LicenseStatus.TrialExpired ->
+                "The trial has ended. Activate a license key to go Pro."
+            is com.lumora.photoeditor.data.billing.LicenseStatus.Licensed ->
+                "Your Pro license is active."
+        },
+        style = type.caption,
+        color = colors.textTertiary,
+    )
+    Spacer(Modifier.height(8.dp))
+    LumoraOutlineButton(
+        onClick = { showPaywall = true },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("View Pro plans…")
+    }
+    if (showPaywall) {
+        PaywallDialog(store = store, onDismiss = { showPaywall = false })
+    }
+}
+
+@Composable
+private fun SyncSettingsSection(container: AppContainer) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    val settings = container.settings
+    val engine = container.syncEngine
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val autoSync by settings.syncAuto.collectAsState()
+    val account by container.syncAccounts.account.collectAsState()
+    var snapshot by remember {
+        mutableStateOf<com.lumora.photoeditor.data.sync.SyncSnapshot?>(null)
+    }
+    var syncing by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+
+    suspend fun refreshSnapshot() {
+        // deviceId() generates the stable install id once, so the row
+        // never shows a blank id after the first open.
+        engine.deviceId()
+        snapshot = engine.snapshot()
+    }
+
+    LaunchedEffect(Unit) { refreshSnapshot() }
+
+    StatusRow("Backend", snapshot?.backendName ?: "…")
+    StatusRow("Account", when (val a = account) {
+        com.lumora.photoeditor.data.sync.SyncAccount.SignedOut -> "Not signed in"
+        is com.lumora.photoeditor.data.sync.SyncAccount.SignedIn -> a.email
+    })
+    StatusRow(
+        "This device",
+        com.lumora.photoeditor.data.sync.shortDeviceId(snapshot?.deviceId),
+    )
+    StatusRow(
+        "Last sync",
+        snapshot?.let { com.lumora.photoeditor.data.sync.formatLastSync(it.lastSyncAt) } ?: "…",
+    )
+    val lastError = snapshot?.lastError
+    if (lastError != null) {
+        Spacer(Modifier.height(4.dp))
+        Text("Last error: $lastError", style = type.caption, color = colors.danger)
+    }
+    Spacer(Modifier.height(8.dp))
+    SwitchRow(
+        "Auto-sync",
+        "Sync every 6 hours when connected. No backend is configured yet, " +
+            "so scheduled runs are no-ops.",
+        autoSync,
+        onChange = {
+            settings.setSyncAuto(it)
+            com.lumora.photoeditor.data.sync.SyncScheduler.setAutoSync(context, it)
+        },
+    )
+    Spacer(Modifier.height(8.dp))
+    LumoraOutlineButton(
+        onClick = {
+            notice = null
+            syncing = true
+            scope.launch {
+                try {
+                    notice = com.lumora.photoeditor.data.sync
+                        .describeSyncOutcome(engine.syncNow())
+                    refreshSnapshot()
+                } finally {
+                    syncing = false
+                }
+            }
+        },
+        enabled = !syncing,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (syncing) "Syncing…" else "Sync now")
+    }
+    if (notice != null) {
+        Spacer(Modifier.height(4.dp))
+        Text(notice!!, style = type.caption, color = colors.textSecondary)
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Cloud sync needs your backend — a Google Drive project or your " +
+            "own server. The app is sync-ready; the backend choice is yours.",
+        style = type.caption, color = colors.textTertiary,
+    )
+}
+
+@Composable
+private fun StatusRow(label: String, value: String) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = type.caption,
+            color = colors.textTertiary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(value, style = type.body, color = colors.textPrimary)
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit,
+) {
+    val colors = Lumora.colors
+    val type = Lumora.type
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = type.controlLabel, color = colors.textPrimary)
+            Text(subtitle, style = type.caption, color = colors.textTertiary)
+        }
+        LumoraSwitch(
+            checked = checked,
+            onCheckedChange = onChange,
+            contentDescription = title,
+        )
+    }
+}

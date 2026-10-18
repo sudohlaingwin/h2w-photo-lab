@@ -1,0 +1,19 @@
+LibRaw 0.22.2 — vendored source for the H2W Photo Lab RAW program (Phase 1).
+Upstream: https://www.libraw.org/data/LibRaw-0.22.2.tar.gz
+Tarball SHA256: de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa
+Vendored 2026-10-17. Subset: src/ libraw/ internal/ + license files only
+(samples, docs, RawSpeed, GoPro extras excluded — not needed for the build).
+
+LICENSE: dual LGPL-2.1 / CDDL-1.0. The app links LibRaw DYNAMICALLY
+(libraw.so inside the APK), which keeps the LGPL route clean.
+COMPLIANCE TODO (before publishing anywhere beyond the private Drive link):
+ship a THIRD_PARTY note offering this exact tarball + any patches, per
+LGPL-2.1 section 6. The build here applies NO patches to upstream sources.
+
+Build notes: compiled with the EXPLICIT upstream source list from
+Makefile.am (lib_libraw_a_SOURCES), NOT globbing — globbing pulls in
+overlapping implementations and causes duplicate-symbol link errors.
+Defines: LIBRAW_NOTHREADS (upstream autotools default), USE_ZLIB (NDK libz —
+required for DEFLATE-compressed DNG tiles). NOT defined: USE_JPEG (NDK has no
+libjpeg; lossy-JPEG DNGs fall back to the embedded preview per the roadmap),
+USE_RAWSPEED, USE_DNGSDK.

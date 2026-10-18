@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher icon background: matches the H2W logo's dark navy so the
+         adaptive-icon foreground blends seamlessly behind launcher masks. -->
+    <color name="ic_launcher_background">#0C1228</color>
+</resources>
