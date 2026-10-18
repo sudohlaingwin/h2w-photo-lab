@@ -268,6 +268,17 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     private var proAutoJob: Job? = null
     private var autoRetouchJob: Job? = null
     private var autoDenoiseJob: Job? = null
+    /**
+     * Photo-change race guard (extends the 13:52 coverage to every
+     * photo-analysis path). Analysis runs on Dispatchers.Default while the
+     * user may open another photo; each path captures [tapPhotoId] on the
+     * main thread before launching and bails in its apply step when the
+     * open photo changed, so one photo's analysis can never land on
+     * another photo's state. Null-safe: matches the 13:52 inline check
+     * semantics exactly ([_libraryImage] id equality).
+     */
+    private fun stalePhoto(tapPhotoId: String?): Boolean =
+        _libraryImage.value?.id != tapPhotoId
     /** Guards [applyAutoSkinMask] against double-tap races. */
     private val skinMaskInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -517,6 +528,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 autoEnhanceJob?.cancel()
                 proAutoJob?.cancel()
                 autoRetouchJob?.cancel()
+                autoDenoiseJob?.cancel()
                 val uri = Uri.parse(img.contentUri)
                 val bmp = withContext(Dispatchers.IO) { decodePreview(uri) }
                     ?: throw IllegalStateException("Could not decode this image")
@@ -1127,6 +1139,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun autoStraighten(onNoHorizon: () -> Unit = {}) {
         val bmp = _preview.value ?: return
+        // Photo-change race: the horizon belongs to the photo open at tap
+        // time; a mid-analysis photo switch must not rotate the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             val w = bmp.width; val h = bmp.height
             if (w <= 0 || h <= 0) return@guardLaunch
@@ -1149,6 +1164,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 null
             }
             withContext(Dispatchers.Main) {
+                // Stale: stay silent — onNoHorizon would misreport a
+                // missing horizon on the newly opened photo.
+                if (stalePhoto(tapPhotoId)) return@withContext
                 val l = level
                 if (l == null) {
                     onNoHorizon()
@@ -1264,6 +1282,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: return
+        // Photo-change race: the solved WB belongs to the photo open at tap
+        // time; a mid-analysis photo switch must not re-tint the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
@@ -1284,6 +1305,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val sol = ImageMath.autoWhiteBalance(sr / n / 255f, sg / n / 255f, sb / n / 255f)
                     ?: return@guardLaunch
                 withContext(Dispatchers.Main) {
+                    if (stalePhoto(tapPhotoId)) return@withContext
                     update("Auto white balance") { s ->
                         s.copy(light = s.light.copy(temp = sol.first * 100f, tint = sol.second * 100f))
                     }
@@ -1334,6 +1356,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: return
+        // Photo-change race: the vignette estimate belongs to the photo
+        // open at tap time; a mid-analysis photo switch must not apply it
+        // to the new photo (openPhoto itself calls this per photo).
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
@@ -1346,6 +1372,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 small.recycle()
                 val est = AutoLens.analyzeVignette(px, sw, sh) ?: return@guardLaunch
                 withContext(Dispatchers.Main) {
+                    if (stalePhoto(tapPhotoId)) return@withContext
                     autoLensEstimate = est
                     _autoLensApplied.value = true
                     update("Auto lens correction") { s ->
@@ -2992,6 +3019,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // pixels on Dispatchers.Default while the UI thread may recycle
         // the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(AutoDenoiseOutcome.Failed); return }
+        // Photo-change race: the noise estimate belongs to the photo open
+        // at tap time; a mid-analysis photo switch must not overwrite the
+        // new photo's NR sliders.
+        val tapPhotoId = _libraryImage.value?.id
         autoDenoiseJob?.cancel()
         autoDenoiseJob = guardLaunch(Dispatchers.Default) {
             try {
@@ -3009,6 +3040,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val scaleComp = kotlin.math.sqrt(origArea / (sw * sh).toFloat())
                 val settings = AutoDenoise.analyzePixels(pixels, sw, sh, scaleComp)
                 withContext(Dispatchers.Main) {
+                    // Stale: NoChange (not Failed) — nothing was applied and
+                    // there is no error to report; the caption is transient.
+                    if (stalePhoto(tapPhotoId)) {
+                        onDone(AutoDenoiseOutcome.NoChange)
+                        return@withContext
+                    }
                     if (settings != null) {
                         val current = _state.value
                         val next = current.copy(
@@ -3521,6 +3558,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: skinMask() reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: run { skinMaskInFlight.set(false); return }
+        // Photo-change race: called on the main thread (from Pro Auto's
+        // guarded apply block), but the skin analysis below runs long —
+        // the photo can still change before this job applies.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val skinMask = try {
@@ -3536,6 +3577,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     var skinPx = 0
                     for (p in px) if ((p ushr 24) > 80) skinPx++
                     if (skinPx.toFloat() / (sw * sh) < 0.02f) {
+                        skinMask.recycle()
+                        return@guardLaunch
+                    }
+                    // Stale: drop the raster before it is stored or
+                    // attached — it belongs to the previous photo, and the
+                    // baseline re-pin below must not resurrect it either.
+                    if (stalePhoto(tapPhotoId)) {
                         skinMask.recycle()
                         return@guardLaunch
                     }
@@ -3877,6 +3925,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         onDone: (summary: String) -> Unit = {},
     ) {
         val bmp = snapshotPreview() ?: run { onDone("No photo"); return }
+        // Photo-change race: every spot/mask below is positioned in the
+        // analyzed photo's coordinates — a mid-analysis photo switch must
+        // not stamp them onto the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             // Profile the photo, then apply style intensity.
             val profile = try { RetouchIntel.analyze(bmp) }
@@ -3945,6 +3997,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             }
 
             withContext(Dispatchers.Main) {
+                // Stale: recycle the analyzed raster, reset the caller's
+                // spinner via onDone, but apply nothing — the blemish
+                // coordinates belong to the previous photo.
+                if (stalePhoto(tapPhotoId)) {
+                    skinMask?.let { if (!it.isRecycled) it.recycle() }
+                    onDone("Photo changed — beauty look not applied")
+                    return@withContext
+                }
                 var eyeCount = 0
                 if (blemishes.isNotEmpty() || underEyes.isNotEmpty()) {
                     beginGesture()
@@ -4077,6 +4137,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             applyPortraitPrompt(plan, prompt, onResult)
             return
         }
+        // Photo-change race: the mask raster below is built from the
+        // analyzed photo's pixels — a mid-analysis photo switch must not
+        // attach it (or the global deltas) to the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val bmp = snapshotPreview()
@@ -4098,6 +4162,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     key
                 }
                 val maskId = UUID.randomUUID().toString()
+                // Stale: the raster was analyzed from the previous photo;
+                // attaching it here would mask the wrong image.
+                if (stalePhoto(tapPhotoId)) {
+                    onResult("Photo changed — edit not applied")
+                    return@guardLaunch
+                }
                 update("Prompt: $prompt") { s ->
                     var next = applyPromptGlobal(s, plan.global)
                     if (maskSpec != null && aiKey != null) {
@@ -4141,6 +4211,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         prompt: String,
         onResult: (String) -> Unit,
     ) {
+        // Photo-change race: the detected spots are positioned in the
+        // analyzed photo's coordinates — a mid-analysis photo switch must
+        // not stamp them onto the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             val bmp = snapshotPreview()
             if (bmp == null) {
@@ -4157,6 +4231,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val hasGlobal = plan.global != PromptGlobal()
                 if (spots.isEmpty() && !hasGlobal) {
                     onResult(portraitMissMessage(plan.portrait!!))
+                    return@guardLaunch
+                }
+                if (stalePhoto(tapPhotoId)) {
+                    onResult("Photo changed — edit not applied")
                     return@guardLaunch
                 }
                 beginGesture()
@@ -4342,6 +4420,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun applyAutoMask(onDone: (created: List<String>) -> Unit = {}) {
         val bmp = snapshotPreview() ?: run { onDone(emptyList()); return }
+        // Photo-change race: every raster below describes the analyzed
+        // photo — a mid-analysis photo switch must not attach its masks
+        // to the new photo.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             val analysis = try {
                 AutoMask.analyze(bmp)
@@ -4458,6 +4540,16 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             if (!bmp.isRecycled) bmp.recycle()
 
             withContext(Dispatchers.Main) {
+                // Stale: recycle every analyzed raster and create nothing —
+                // the masks describe the previous photo. The spinner still
+                // resets via onDone(emptyList()).
+                if (stalePhoto(tapPhotoId)) {
+                    for (plan in toCreate) {
+                        if (!plan.raster.isRecycled) plan.raster.recycle()
+                    }
+                    onDone(emptyList())
+                    return@withContext
+                }
                 val names = mutableListOf<String>()
                 for (plan in toCreate) {
                     val aiKey = "automask_${UUID.randomUUID()}"
@@ -4550,6 +4642,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(); return }
+        // Photo-change race: the retouched result is the analyzed photo —
+        // a mid-analysis photo switch must not replace the new photo's
+        // preview bitmap with it.
+        val tapPhotoId = _libraryImage.value?.id
         guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
@@ -4587,6 +4683,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
 
                 withContext(Dispatchers.Main) {
+                    // Stale: recycle the previous photo's result, reset the
+                    // spinner, and touch nothing — the new photo's preview
+                    // and undo stack belong to it alone.
+                    if (stalePhoto(tapPhotoId)) {
+                        if (!resultBmp.isRecycled) resultBmp.recycle()
+                        onDone()
+                        return@withContext
+                    }
                     // Push current to bitmap undo stack (shared with Remove tool)
                     _preview.value?.let { cur ->
                         if (!cur.isRecycled) {
@@ -4759,11 +4863,25 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         if (!hasRemovalMask()) { base.recycle(); onDone(false); return }
         if (_isRemoving.value) { base.recycle(); return }
 
+        // Photo-change race: the inpainted result is the analyzed photo —
+        // a mid-analysis photo switch must not replace the new photo's
+        // preview with it, nor push the old snapshot into its undo stack.
+        val tapPhotoId = _libraryImage.value?.id
         _isRemoving.value = true
         guardLaunch(Dispatchers.Default) {
             try {
                 val result = Inpainting.removeObject(base, mask) { _ -> }
                 withContext(Dispatchers.Main) {
+                    // Stale: recycle the previous photo's result, reset the
+                    // flag, and touch nothing — the new photo's preview,
+                    // undo stack, and removal mask belong to it alone.
+                    if (stalePhoto(tapPhotoId)) {
+                        if (result != null && !result.isRecycled) result.recycle()
+                        if (!base.isRecycled) base.recycle()
+                        _isRemoving.value = false
+                        onDone(false)
+                        return@withContext
+                    }
                     if (result != null && result != base) {
                         synchronized(removalUndoStack) {
                             removalUndoStack.addLast(base)
