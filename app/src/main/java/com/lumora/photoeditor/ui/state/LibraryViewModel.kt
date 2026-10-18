@@ -14,6 +14,7 @@ import com.lumora.photoeditor.data.SmartCollection
 import com.lumora.photoeditor.data.ProofingGallery
 import com.lumora.photoeditor.data.ProofMark
 import com.lumora.photoeditor.data.ClientPicksResult
+import com.lumora.photoeditor.data.LibraryRepository.ImportResult
 import com.lumora.photoeditor.data.keywordKeyOf
 import com.lumora.photoeditor.data.normalizeKeyword
 import com.lumora.photoeditor.engine.Preset
@@ -338,20 +339,25 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
         guardLaunch { _candidates.value = container.library.mediaStoreImages() }
     }
 
-    fun importUris(uris: List<Uri>, onDone: (Int) -> Unit) {
+    /**
+     * Imports picked URIs. onDone receives the full batch result so the UI
+     * can report skipped (unreadable) photos honestly instead of silently
+     * showing fewer photos than the user picked.
+     */
+    fun importUris(uris: List<Uri>, onDone: (ImportResult) -> Unit) {
         guardLaunch {
             _importing.value = true
             // Previously unguarded: a pathological throw left _importing
             // stuck true and never called onDone — now degrades to 0.
-            val n = try {
-                container.library.importUris(uris)
+            val r = try {
+                container.library.importUrisResult(uris)
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 Log.w("LibraryViewModel", "importUris failed", t)
-                0
+                ImportResult(0, uris.size)
             }
             _importing.value = false
-            onDone(n)
+            onDone(r)
         }
     }
 

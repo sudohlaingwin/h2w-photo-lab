@@ -499,6 +499,30 @@ class LibraryRepository(
     suspend fun importUris(uris: List<Uri>): Int = importUrisWithIds(uris).size
 
     /**
+     * Result of an import batch: how many photos landed in the library and
+     * how many URIs were unreadable (revoked share, broken provider, corrupt
+     * file). The count split is what the UI reports — a partial batch must
+     * never look like a silent full success.
+     */
+    data class ImportResult(val imported: Int, val skipped: Int)
+
+    /**
+     * Imports the given URIs and reports both counts. Never throws except
+     * for [CancellationException] — [importUrisWithIds] already isolates
+     * per-URI failures, so a total throw here is the guarded fallback.
+     */
+    suspend fun importUrisResult(uris: List<Uri>): ImportResult {
+        val ids = try {
+            importUrisWithIds(uris)
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            Log.w(TAG, "import batch failed", t)
+            emptyList()
+        }
+        return ImportResult(ids.size, (uris.size - ids.size).coerceAtLeast(0))
+    }
+
+    /**
      * Imports the given URIs and returns the new library row ids, in input
      * order. Per-URI isolation: one unreadable/corrupt URI (a revoked share,
      * a broken provider, a DB hiccup) only skips that single photo — it can

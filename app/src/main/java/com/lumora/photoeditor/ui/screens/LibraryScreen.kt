@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumora.photoeditor.data.LibraryImage
+import com.lumora.photoeditor.data.LibraryRepository.ImportResult
 import com.lumora.photoeditor.data.PhotoDetails
 import com.lumora.photoeditor.data.ProofMark
 import com.lumora.photoeditor.data.ProofingGallery
@@ -186,7 +187,7 @@ fun LibraryScreen(
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20),
     ) { uris ->
-        if (uris.isNotEmpty()) vm.importUris(uris) {}
+        if (uris.isNotEmpty()) vm.importUris(uris) { r -> notice = importResultNotice(r) }
     }
 
     // RAW program Phase 1 slice 2 / Phase 2 slice 1: the system photo picker
@@ -201,7 +202,7 @@ fun LibraryScreen(
     val rawPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        if (uri != null) vm.importUris(listOf(uri)) {}
+        if (uri != null) vm.importUris(listOf(uri)) { r -> notice = importResultNotice(r) }
     }
 
     // Camera capture (Lightroom-parity import path): TakePicture needs no
@@ -907,6 +908,7 @@ fun LibraryScreen(
                 showImport = false
                 launchCamera()
             },
+            onImportResult = { r -> notice = importResultNotice(r) },
             onDismiss = { showImport = false },
         )
     }
@@ -1682,6 +1684,21 @@ private fun PhotoCell(
     }
 }
 
+/**
+ * Honest one-line import summary for the transient notice: a partial batch
+ * (some URIs unreadable) must never read as a full success.
+ */
+private fun importResultNotice(r: ImportResult): String {
+    val photos = if (r.imported == 1) "1 photo" else "${r.imported} photos"
+    return when {
+        r.imported > 0 && r.skipped > 0 ->
+            "Imported $photos · ${r.skipped} couldn't be read"
+        r.imported > 0 -> "Imported $photos"
+        r.skipped > 0 -> "Couldn't read those photos"
+        else -> "Nothing imported"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ImportSheet(
@@ -1689,6 +1706,7 @@ private fun ImportSheet(
     onSystemPicker: () -> Unit,
     onRawImport: () -> Unit,
     onTakePhoto: () -> Unit,
+    onImportResult: (ImportResult) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = Lumora.colors
@@ -1696,7 +1714,6 @@ private fun ImportSheet(
     val candidates by vm.candidates.collectAsState()
     val selected = remember { mutableStateOf(setOf<Uri>()) }
     val scope = rememberCoroutineScope()
-    var imported by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(Unit) { vm.loadCandidates() }
 
@@ -1805,8 +1822,8 @@ private fun ImportSheet(
                     LumoraButton(
                         onClick = {
                             scope.launch {
-                                vm.importUris(selected.value.toList()) { n ->
-                                    imported = n
+                                vm.importUris(selected.value.toList()) { r ->
+                                    onImportResult(r)
                                     onDismiss()
                                 }
                             }
@@ -1819,9 +1836,6 @@ private fun ImportSheet(
                         shape = RoundedCornerShape(10.dp),
                     ) { Text("Import (${selected.value.size})") }
                 }
-            }
-            imported?.let {
-                LaunchedEffect(it) { /* snackbar handled by caller if needed */ }
             }
         }
     }
