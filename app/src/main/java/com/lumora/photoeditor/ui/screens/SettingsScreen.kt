@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.lumora.photoeditor.BuildConfig
@@ -220,7 +221,14 @@ private fun DeveloperRow() {
         modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(colors.panel)
-            .clickable { showPopup = true }
+            // Labeled role + action (22:32 cycle): a bare clickable() made
+            // TalkBack fall back to a generic "double-tap to activate"
+            // over the row's text, hiding what the row actually does.
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "View developer profile",
+                onClick = { showPopup = true },
+            )
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

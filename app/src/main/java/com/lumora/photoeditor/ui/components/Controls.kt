@@ -583,6 +583,14 @@ fun LumoraChip(
             .heightIn(min = 48.dp)
             .clip(shape)
             .background(if (selected) colors.accentDim else colors.panelElevated)
+            // TalkBack (22:32 cycle): the bare clickable() below made the
+            // chip announce as a generic "double-tap to activate" with no
+            // toggle state — declare the checkbox role + selected state so
+            // it reads "<label>, checkbox, checked/not checked".
+            .semantics {
+                role = Role.Checkbox
+                this.selected = selected
+            }
             .border(
                 width = 1.dp,
                 color = if (selected) colors.accent.copy(alpha = 0.55f) else colors.divider,
@@ -1229,7 +1237,13 @@ fun ThumbImage(
         if (phase == 2) {
             Column(
                 modifier = Modifier.fillMaxSize()
-                    .then(if (allowRetry) Modifier.clickable {
+                    .then(if (allowRetry) Modifier.clickable(
+                        // TalkBack (22:32 cycle): role + labeled action so
+                        // the retry area announces as "Retry, button" instead
+                        // of a bare "double-tap to activate".
+                        role = Role.Button,
+                        onClickLabel = "Retry",
+                    ) {
                         retry += 1
                         phase = 0
                     } else Modifier),
