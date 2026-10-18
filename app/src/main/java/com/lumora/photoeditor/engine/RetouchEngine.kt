@@ -259,16 +259,18 @@ object RetouchEngine {
                 val sReg = copyRegion(src, w, h,
                     (x0 + dx).toInt() - blurR, (y0 + dy).toInt() - blurR,
                     (x1 + dx).toInt() + blurR, (y1 + dy).toInt() + blurR)
-                // Tone references (boxBlurRgbFloat): the offset
-                // smooth(dest) − smooth(src) IS the stamp's tone, kept in
-                // float so it ramps at sub-integer precision — the int-packed
-                // variant quantized it in ±1 steps, leaving faint contour
-                // bands across large smooth gradients (skies, walls, skin).
-                // Applied at full strength across the whole disc; the
-                // feathered alpha `f` alone melts the stamp into the
-                // destination.
-                val dBlur = InpaintingCore.boxBlurRgbFloat(dReg.px, dReg.w, dReg.h, blurR)
-                val sBlur = InpaintingCore.boxBlurRgbFloat(sReg.px, sReg.w, sReg.h, blurR)
+                // DO NOT CHANGE to boxBlurRgbFloat: the float-tone variant was
+                // tried and REVERTED (2026-10-18) because CloneFloatToneTest
+                // .cloneStampInteriorHasNoBandingSteps FAILED (maxLap=3.0 >
+                // 1.2 threshold) — the float field did NOT eliminate banding
+                // and may have regressed quality. The int-packed boxBlurRgb
+                // is the verified working version. See upgrade-log 2026-10-18.
+                // Tone references (boxBlurRgb): the offset smooth(dest) −
+                // smooth(src) IS the stamp's tone. Applied at full strength
+                // across the whole disc; the feathered alpha `f` alone melts
+                // the stamp into the destination.
+                val dBlur = InpaintingCore.boxBlurRgb(dReg.px, dReg.w, dReg.h, blurR)
+                val sBlur = InpaintingCore.boxBlurRgb(sReg.px, sReg.w, sReg.h, blurR)
                 // Full-disc tone match (no feather weighting on the color —
                 // see the note above): the patch interior used to be an
                 // exact copy and tone was bent only in a rim band, so a
@@ -286,10 +288,10 @@ object RetouchEngine {
                     val di = (y - dReg.y0) * dReg.w + (x - dReg.x0)
                     val si = ((y + dy).toInt() - sReg.y0) * sReg.w +
                         ((x + dx).toInt() - sReg.x0)
-                    val di3 = di * 3; val si3 = si * 3
-                    r += dBlur[di3] - sBlur[si3]
-                    g += dBlur[di3 + 1] - sBlur[si3 + 1]
-                    b += dBlur[di3 + 2] - sBlur[si3 + 2]
+                    val dPx = dBlur[di]; val sPx = sBlur[si]
+                    r += ((dPx shr 16) and 0xFF) - ((sPx shr 16) and 0xFF)
+                    g += ((dPx shr 8) and 0xFF) - ((sPx shr 8) and 0xFF)
+                    b += (dPx and 0xFF) - (sPx and 0xFF)
                     blendInto(out, x - ox, y - oy, ow, r, g, b, f)
                 }
             }

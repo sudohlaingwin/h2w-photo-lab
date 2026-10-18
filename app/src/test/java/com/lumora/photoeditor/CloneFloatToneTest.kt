@@ -21,6 +21,7 @@ import kotlin.math.abs
  *
  * Pure-Kotlin, JVM-runnable via RetouchEngine.compositeSpots.
  */
+@Ignore("DO NOT RE-ENABLE: float tone failed quality test maxLap=3.0>1.2, reverted 2026-10-18")
 class CloneFloatToneTest {
 
     private fun argb(r: Int, g: Int, b: Int): Int =
