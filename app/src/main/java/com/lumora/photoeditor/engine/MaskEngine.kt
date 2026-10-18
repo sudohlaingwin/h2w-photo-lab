@@ -15,6 +15,16 @@ object MaskEngine {
     const val MAX_RASTER = 512
 
     /**
+     * Pre-painted brush accumulator for one component, enabling incremental
+     * painting: the caller guarantees [acc] equals painting [compId]'s
+     * current strokes into a fresh 0..1 accumulator (see [paintStroke]).
+     * [rasterize] then skips re-stamping every stroke and quantizes [acc]
+     * directly — the result is bit-identical to a full re-paint, at O(1)
+     * cost per new stroke instead of O(all strokes).
+     */
+    class BrushAcc(val compId: String, val acc: FloatArray)
+
+    /**
      * Rasterize a full mask (all components composited) to an ARGB_8888
      * grayscale bitmap (value in R/G/B; the shader samples `.r`).
      *
@@ -22,15 +32,32 @@ object MaskEngine {
      * (row-major, 0..1). Required for pro auto-mask strokes: when a stroke
      * has [BrushStroke.autoMask], paint is gated by luminance similarity to
      * the stroke center so the brush respects strong edges (Lightroom-style).
+     * @param brushAcc optional incremental-paint accumulator for one BRUSH
+     * component (see [BrushAcc]). Used only when it matches the component's
+     * id and size; otherwise the component is painted normally.
      */
-    fun rasterize(mask: Mask, aiStore: AiMaskStore, srcLum: FloatArray? = null): Bitmap {
+    fun rasterize(
+        mask: Mask, aiStore: AiMaskStore, srcLum: FloatArray? = null,
+        brushAcc: BrushAcc? = null,
+    ): Bitmap {
         val w = MAX_RASTER
         val h = MAX_RASTER
         val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val rp = IntArray(w * h) // accumulate in 0..255 ints
         val tmp = IntArray(w * h)
         mask.components.forEachIndexed { index, comp ->
-            rasterComponent(comp, w, h, tmp, aiStore, srcLum)
+            val override = brushAcc?.takeIf {
+                it.compId == comp.id && comp.type == MaskType.BRUSH &&
+                    it.acc.size == w * h
+            }
+            if (override != null) {
+                // Incremental fast path: the accumulator already holds this
+                // component's strokes (caller-verified); quantize directly.
+                for (i in tmp.indices)
+                    tmp[i] = (override.acc[i].coerceIn(0f, 1f) * 255f).toInt()
+            } else {
+                rasterComponent(comp, w, h, tmp, aiStore, srcLum)
+            }
             when {
                 index == 0 && comp.op == MaskOp.ADD -> {
                     for (i in rp.indices) rp[i] = tmp[i]
@@ -109,6 +136,18 @@ object MaskEngine {
         return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
     }
 
+    /**
+     * Paints every stroke of a BRUSH [comp] into [acc] (0..1 floats).
+     * Shared by [rasterComponent] and by the ViewModel's incremental paint
+     * path, so both produce bit-identical accumulators.
+     */
+    fun paintBrushStrokes(
+        acc: FloatArray, w: Int, h: Int, comp: MaskComponent,
+        srcLum: FloatArray? = null,
+    ) {
+        for (stroke in comp.strokes) paintStroke(acc, w, h, stroke, srcLum)
+    }
+
     private fun rasterComponent(
         comp: MaskComponent, w: Int, h: Int, out: IntArray, aiStore: AiMaskStore,
         srcLum: FloatArray?,
@@ -118,7 +157,7 @@ object MaskEngine {
             MaskType.BRUSH -> {
                 // paint strokes into a float accumulator then quantize
                 val acc = FloatArray(w * h)
-                for (stroke in comp.strokes) paintStroke(acc, w, h, stroke, srcLum)
+                paintBrushStrokes(acc, w, h, comp, srcLum)
                 for (i in out.indices) out[i] = (acc[i].coerceIn(0f, 1f) * 255f).toInt()
             }
             MaskType.LINEAR_GRADIENT -> {

@@ -810,6 +810,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         syncUndoRedo()
         requestRender()
         if (!gesture) {
+            // A committed (non-gesture) edit ends any incremental paint
+            // session: the mask cache holds the final raster from here.
+            synchronized(paintLock) { paintAcc = null }
             scheduleAutosave()
             label?.let { recordHistory(it) }
         }
@@ -822,6 +825,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun endGesture(label: String) {
         val snap = gestureSnapshot
         gestureSnapshot = null
+        // The paint gesture is over: drop the incremental accumulator and
+        // free its ~1MB. The mask cache keeps serving the final raster.
+        synchronized(paintLock) { paintAcc = null }
         var final = _state.value
         // Crop gestures (interactive crop drags, aspect chips) skip the
         // constrain in update() so the rect tracks the finger; apply it once
@@ -1515,7 +1521,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val cached = maskCache[m.id]
                 if (cached != null && cached.first == m.revision) cached.second
                 else {
-                    val raster = rasterizeSafely("mask") { MaskEngine.rasterize(m, container.aiMasks, autoMaskLum) }
+                    val raster = rasterizeSafely("mask") {
+                        MaskEngine.rasterize(m, container.aiMasks, autoMaskLum,
+                            brushAccFor(m))
+                    }
                     if (raster != null) {
                         maskCache[m.id] = m.revision to raster
                         // drop stale entries
@@ -1869,6 +1878,67 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         container.settings.setShowRetouchSpots(!container.settings.showRetouchSpots.value)
     }
 
+    // ------------------------------------------------------------------
+    // Incremental mask-brush painting.
+    //
+    // Painting a mask brush appends one 2-point stroke per move segment;
+    // re-stamping every stroke of the gesture on every segment is O(n^2)
+    // over a long stroke and visibly lags. Instead each new stroke is
+    // painted ONCE into a persistent accumulator ([paintAcc]), and the
+    // render path reuses it — but ONLY when it provably equals a full
+    // re-paint: same mask + component, same source bitmap, stroke count
+    // matches, and the tail stroke is the identical object (strokes are
+    // append-only, so any undo/redo/replace changes the count or the tail
+    // reference). Any doubt → null → the exact old full-rasterize path,
+    // so pixels are never wrong, only occasionally slower for one frame.
+    // Guarded by [paintLock]: painted on Main (addBrushStroke), read on
+    // Default (requestRender); the render path copies the array under the
+    // lock so a render never blocks the painter.
+    // ------------------------------------------------------------------
+    private val paintLock = Any()
+    private var paintAcc: PaintAcc? = null
+
+    private class PaintAcc(
+        val maskId: String,
+        val compId: String,
+        val acc: FloatArray,
+        var strokeCount: Int,
+        var lastStroke: BrushStroke?,
+        val src: Bitmap?,
+        var srcLum: FloatArray?,
+    )
+
+    /** Luminance field for auto-mask strokes, built once per accumulator. */
+    private fun PaintAcc.lumFor(stroke: BrushStroke): FloatArray? {
+        if (!stroke.autoMask) return null
+        var lum = srcLum
+        if (lum == null) {
+            lum = src?.let { buildMaskLuminance(it) }
+            srcLum = lum
+        }
+        return lum
+    }
+
+    /**
+     * Returns a copy of the incremental paint accumulator for [m]'s active
+     * brush component, or null when it can't be proven equal to a full
+     * re-paint (the caller then uses the exact old rasterize path).
+     */
+    private fun brushAccFor(m: Mask): MaskEngine.BrushAcc? {
+        val bmp = _preview.value ?: return null
+        synchronized(paintLock) {
+            val cur = paintAcc ?: return null
+            if (cur.maskId != m.id || cur.src !== bmp) return null
+            val comp = m.components.find { it.id == cur.compId } ?: return null
+            if (comp.type != MaskType.BRUSH) return null
+            if (comp.strokes.size != cur.strokeCount) return null
+            if (cur.strokeCount > 0 &&
+                comp.strokes[cur.strokeCount - 1] !== cur.lastStroke) return null
+            if (cur.acc.size != MaskEngine.MAX_RASTER * MaskEngine.MAX_RASTER) return null
+            return MaskEngine.BrushAcc(cur.compId, cur.acc.copyOf())
+        }
+    }
+
     fun addBrushStroke(maskId: String, compId: String, stroke: BrushStroke) {
         update(gesture = true) { s ->
             s.copy(masks = s.masks.map { m ->
@@ -1882,6 +1952,37 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     revision = System.nanoTime(),
                 )
             })
+        }
+        // Incremental: paint just the new stroke into the persistent
+        // accumulator — O(1) stamp work per segment instead of re-stamping
+        // the whole gesture. Falls back to a one-time O(n) rebuild whenever
+        // the accumulator can't prove it matches (undo mid-gesture, etc.).
+        synchronized(paintLock) {
+            val bmp = _preview.value
+            val comp = _state.value.masks.find { it.id == maskId }
+                ?.components?.find { it.id == compId }
+            val cur = paintAcc
+            if (cur != null && comp != null && comp.type == MaskType.BRUSH &&
+                cur.maskId == maskId && cur.compId == compId && cur.src === bmp &&
+                cur.strokeCount == comp.strokes.size - 1 &&
+                (cur.strokeCount == 0 ||
+                    comp.strokes[cur.strokeCount - 1] === cur.lastStroke)
+            ) {
+                MaskEngine.paintStroke(cur.acc, MaskEngine.MAX_RASTER,
+                    MaskEngine.MAX_RASTER, stroke, cur.lumFor(stroke))
+                cur.strokeCount++
+                cur.lastStroke = stroke
+            } else if (comp != null && comp.type == MaskType.BRUSH && bmp != null) {
+                val w = MaskEngine.MAX_RASTER
+                val acc = FloatArray(w * w)
+                val lum = if (comp.strokes.any { it.autoMask })
+                    buildMaskLuminance(bmp) else null
+                MaskEngine.paintBrushStrokes(acc, w, w, comp, lum)
+                paintAcc = PaintAcc(maskId, compId, acc, comp.strokes.size,
+                    comp.strokes.lastOrNull(), bmp, lum)
+            } else {
+                paintAcc = null
+            }
         }
     }
 
