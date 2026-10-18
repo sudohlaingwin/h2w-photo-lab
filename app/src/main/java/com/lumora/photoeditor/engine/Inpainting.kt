@@ -91,13 +91,28 @@ object Inpainting {
     ): Bitmap? {
         val x0 = bounds[0]; val y0 = bounds[1]
         val bw = bounds[2] - x0; val bh = bounds[3] - y0
+        // The second allocation can throw (OOM) after the first succeeded;
+        // without this guard `cropBmp` would leak before the try/finally
+        // below is even entered.
         val cropBmp = Bitmap.createBitmap(bmp, x0, y0, bw, bh)
-        val cropMask = Bitmap.createBitmap(mask, x0, y0, bw, bh)
+        val cropMask: Bitmap = try {
+            Bitmap.createBitmap(mask, x0, y0, bw, bh)
+        } catch (t: Throwable) {
+            if (!cropBmp.isRecycled) cropBmp.recycle()
+            throw t
+        }
         try {
             val filled = removeFull(cropBmp, cropMask, { p -> onProgress(p * 0.9f) },
                 CROP_WORK_MAX) ?: return null
             onProgress(0.95f)
-            return blendCropped(bmp, filled, cropMask, x0, y0, featherPx = 4)
+            // blendCropped only READS `filled` (getPixels) — it never takes
+            // ownership — so it must be recycled here; previously one
+            // crop-resolution bitmap leaked on every successful removal.
+            try {
+                return blendCropped(bmp, filled, cropMask, x0, y0, featherPx = 4)
+            } finally {
+                if (!filled.isRecycled) filled.recycle()
+            }
         } finally {
             if (!cropBmp.isRecycled) cropBmp.recycle()
             if (!cropMask.isRecycled) cropMask.recycle()
@@ -128,7 +143,15 @@ object Inpainting {
             val sh = max(16, (h * scale).toInt())
 
             val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
-            val smallMask = Bitmap.createScaledBitmap(mask, sw, sh, true)
+            // The second allocation can throw (OOM) after the first
+            // succeeded; without this guard `small` would leak and the
+            // outer catch would only convert the failure to null.
+            val smallMask: Bitmap = try {
+                Bitmap.createScaledBitmap(mask, sw, sh, true)
+            } catch (t: Throwable) {
+                if (small != bmp && !small.isRecycled) small.recycle()
+                throw t
+            }
 
             val pixels = IntArray(sw * sh)
             small.getPixels(pixels, 0, sw, 0, 0, sw, sh)
@@ -151,17 +174,30 @@ object Inpainting {
 
             onProgress(0.95f)
 
-            // Write back to a bitmap at the small size, then upscale
+            // Write back to a bitmap at the small size, then upscale.
+            // blendMasked only READS the inpainted bitmap (getPixels) — it
+            // never takes ownership — so this frame must recycle both
+            // temporaries itself: previously `up` (scaled branch) and
+            // `outSmall` (unscaled branch) leaked one working-resolution
+            // bitmap on every successful removal, and a throwing
+            // createScaledBitmap left `outSmall` behind too.
             val outSmall = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888)
             outSmall.setPixels(result, 0, sw, 0, 0, sw, sh)
 
-            val out = if (sw != w || sh != h) {
-                val up = Bitmap.createScaledBitmap(outSmall, w, h, true)
-                outSmall.recycle()
-                // Blend: only replace the masked area, feather the edges
-                blendMasked(bmp, up, mask, featherPx = 3)
-            } else {
-                blendMasked(bmp, outSmall, mask, featherPx = 2)
+            val out = try {
+                if (sw != w || sh != h) {
+                    val up = Bitmap.createScaledBitmap(outSmall, w, h, true)
+                    try {
+                        // Blend: only replace the masked area, feather the edges
+                        blendMasked(bmp, up, mask, featherPx = 3)
+                    } finally {
+                        if (!up.isRecycled) up.recycle()
+                    }
+                } else {
+                    blendMasked(bmp, outSmall, mask, featherPx = 2)
+                }
+            } finally {
+                if (!outSmall.isRecycled) outSmall.recycle()
             }
             onProgress(1f)
             out

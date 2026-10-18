@@ -266,8 +266,17 @@ object MaskEngine {
                 if (f <= 0.001f) continue
             }
             val idx = y * w + x
-            acc[idx] = if (stroke.erase) (acc[idx] * (1f - f)).coerceAtLeast(eraseFloor)
-            else (1f - (1f - acc[idx]) * (1f - f)).coerceAtMost(cap)
+            acc[idx] = if (stroke.erase) {
+                // Erase only ever REMOVES density: multiplicative decay that
+                // never drives below (1 - opacity), and leaves pixels already
+                // at/below the floor untouched. The old
+                // `(acc * (1-f)).coerceAtLeast(eraseFloor)` RAISED empty and
+                // below-floor pixels UP to the floor — an erase stroke over an
+                // unpainted area stamped a hard-edged (1-opacity) disc, with
+                // the feather falloff bypassed entirely (the floor applied
+                // even where f -> 0).
+                max(acc[idx] * (1f - f), min(acc[idx], eraseFloor))
+            } else (1f - (1f - acc[idx]) * (1f - f)).coerceAtMost(cap)
         }
     }
 
