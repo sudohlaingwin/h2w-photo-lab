@@ -615,6 +615,14 @@ fun EditorScreen(
                             vm.update(gesture = true) { s -> s.copy(crop = rect) }
                         },
                         onCropEnd = { vm.endGesture("Crop") },
+                        // Double-tap in crop mode: reset to the full image,
+                        // keeping the aspect lock (Lightroom parity, same
+                        // semantics as the Geometry panel's Reset crop).
+                        onCropReset = {
+                            vm.update("Reset crop") { s ->
+                                s.copy(crop = CropParams().copy(aspect = s.crop.aspect))
+                            }
+                        },
                         onPickColor = { r, g, b ->
                             val cp = colorPick
                             when {
@@ -1189,7 +1197,7 @@ private fun ActiveToolChip(
         curveTargetActive -> "Drag up or down on the photo to bend the curve at that tone"
         cropActive -> if (cropOobWarning)
             "Crop extends beyond the photo — those corners will export black"
-        else "Drag corners or edges to crop — pinch to zoom in"
+        else "Drag corners or edges to crop — pinch to zoom in, double-tap to reset"
         retouchEraseActive -> "Tap a retouch spot to remove it"
         paintReq is PaintRequest.Brush && paintReq.erase -> "Eraser — paint to remove"
         paintReq is PaintRequest.Brush -> "Brush — paint the mask"

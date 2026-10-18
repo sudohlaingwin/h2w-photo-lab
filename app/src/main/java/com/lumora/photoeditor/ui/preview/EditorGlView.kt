@@ -103,6 +103,9 @@ fun EditorGlView(
     onCropStart: () -> Unit = {},
     onCropDrag: (rect: CropParams) -> Unit = {},
     onCropEnd: () -> Unit = {},
+    /** Fired on double-tap while in [PreviewTouchMode.Crop]: resets the crop
+     *  rect to the full image (aspect lock kept — Lightroom parity). */
+    onCropReset: () -> Unit = {},
     /** Fired (on the main thread) with the averaged 0..1 RGB of a small patch
      *  around the tap point while in [PreviewTouchMode.Pick]. */
     onPickColor: (r: Float, g: Float, b: Float) -> Unit = { _, _, _ -> },
@@ -321,6 +324,7 @@ fun EditorGlView(
                 view.onCropStart = onCropStart
                 view.onCropDrag = onCropDrag
                 view.onCropEnd = onCropEnd
+                view.onCropReset = onCropReset
                 view.onPickColor = onPickColor
                 view.onStraighten = onStraighten
                 view.onStraightenOverlay = { straightenPts = it }
@@ -753,6 +757,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     var onCropStart: () -> Unit = {}
     var onCropDrag: (CropParams) -> Unit = {}
     var onCropEnd: () -> Unit = {}
+    var onCropReset: () -> Unit = {}
     /** Called on the UI thread with the averaged 0..1 RGB of a small patch
      *  around the tap point while in [PreviewTouchMode.Pick]. */
     var onPickColor: (r: Float, g: Float, b: Float) -> Unit = { _, _, _ -> }
@@ -925,6 +930,20 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     private val gestureDetector = GestureDetector(context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDoubleTap(e: MotionEvent): Boolean {
+                // Lightroom parity: double-tap in crop mode resets the crop
+                // rect to the full image (aspect lock kept) instead of
+                // zooming — zoom is one-shot-reset on crop entry anyway, and
+                // the crop rectangle is the thing being edited.
+                if (touchMode == PreviewTouchMode.Crop) {
+                    // Skip the reset when the crop is already full-image: a
+                    // stale double-tap would otherwise push a no-op entry
+                    // onto the undo stack.
+                    val crop = pending?.state?.crop
+                    if (crop != null && crop != CropParams().copy(aspect = crop.aspect)) {
+                        onCropReset()
+                    }
+                    return true
+                }
                 zoom = when {
                     zoom < 1.5f -> 2.5f
                     zoom < 4f -> 5f
@@ -1591,6 +1610,11 @@ private class GLView(context: Context) : GLSurfaceView(context) {
         if (touchMode == PreviewTouchMode.Crop) {
             // Picsart/Lightroom-style: two-finger pinch zooms in crop mode for
             // precise handle placement; single finger drags the crop handles.
+            // The gesture detector must see every crop-mode event too: it
+            // owns the double-tap-to-reset-crop gesture (nothing below would
+            // ever fire it — the old code returned before the shared
+            // gestureDetector.onTouchEvent call).
+            gestureDetector.onTouchEvent(event)
             // Route multi-touch to the scale detector first.
             scaleDetector.onTouchEvent(event)
             if (scaleDetector.isInProgress) {
