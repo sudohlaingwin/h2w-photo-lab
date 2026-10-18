@@ -491,23 +491,17 @@ private fun AiKeySettings(container: AppContainer) {
                                         it.write("""{"contents":[{"parts":[{"text":"Say OK"}]}]}""")
                                     }
                                     val code = conn.responseCode
-                                    val body = try {
-                                        conn.inputStream.bufferedReader().readText().take(150)
-                                    } catch (_: Exception) {
-                                        conn.errorStream?.bufferedReader()?.readText()?.take(250) ?: ""
-                                    }
                                     conn.disconnect()
                                     if (code in 200..299) {
                                         ok = true; usedModel = model
                                         break
                                     } else if (code == 404) {
-                                        msg = "HTTP $code: ${body.take(120)}"
-                                        continue // try next model
-                                    } else if (code == 429) {
-                                        msg = "Quota exceeded (429): your Gemini free quota is used up. Check your plan at aistudio.google.com — free quota resets daily."
-                                        break
+                                        continue // deprecated model, try next
                                     } else {
-                                        msg = "HTTP $code: ${body.take(120)}"
+                                        // Friendly plain-language message: the raw
+                                        // API JSON body gets clipped mid-word on a
+                                        // phone screen and looks like an app bug.
+                                        msg = com.lumora.photoeditor.ai.friendlyGeminiHttpError(code)
                                         break
                                     }
                                 } catch (e: Exception) {
@@ -516,7 +510,9 @@ private fun AiKeySettings(container: AppContainer) {
                                 }
                             }
                             if (ok) true to "Connected! Gemini is ready. ✓ ($usedModel)"
-                            else false to msg
+                            else false to msg.ifBlank {
+                                com.lumora.photoeditor.ai.friendlyNoGeminiModelFound()
+                            }
                         }
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e // don't swallow coroutine cancellation

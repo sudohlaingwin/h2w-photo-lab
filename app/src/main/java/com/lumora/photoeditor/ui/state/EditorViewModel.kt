@@ -2689,23 +2689,17 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                             it.write(body)
                         }
                         val code = conn.responseCode
-                        val resp = try {
-                            conn.inputStream.bufferedReader().readText().take(200)
-                        } catch (_: Exception) {
-                            try { conn.errorStream?.bufferedReader()?.readText()?.take(300) } catch (_: Exception) { "" }
-                        }
                         conn.disconnect()
                         if (code in 200..299) {
                             ok = true; usedModel = model
                             break
                         } else if (code == 404) {
-                            msg = "HTTP $code: ${resp?.take(150) ?: ""}"
-                            continue
-                        } else if (code == 429) {
-                            msg = "Quota exceeded (429): your Gemini free quota is used up. Check your plan at aistudio.google.com — free quota resets daily."
-                            break
+                            continue // deprecated model, try next
                         } else {
-                            msg = "HTTP $code: ${resp?.take(150) ?: ""}"
+                            // Friendly plain-language message: the raw
+                            // API JSON body gets clipped mid-word on a
+                            // phone screen and looks like an app bug.
+                            msg = com.lumora.photoeditor.ai.friendlyGeminiHttpError(code)
                             break
                         }
                     } catch (e: Exception) {
@@ -2715,7 +2709,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 withContext(Dispatchers.Main) {
                     if (ok) onResult(true, "Connected! Gemini is ready. ($usedModel)")
-                    else onResult(false, msg)
+                    else onResult(false, msg.ifBlank {
+                        com.lumora.photoeditor.ai.friendlyNoGeminiModelFound()
+                    })
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
