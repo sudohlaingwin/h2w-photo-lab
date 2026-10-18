@@ -925,6 +925,10 @@ private class GLView(context: Context) : GLSurfaceView(context) {
     private var lastSource: Any? = null
     private var lastHistMs = 0L
     private var readBuf: ByteBuffer? = null
+    /** Last glReadPixels error code seen by readHistogram(); the failure is
+     *  logged only when the code changes so a persistently broken readback
+     *  doesn't spam logcat. GL_NO_ERROR = readback healthy. */
+    private var lastHistGlError = GLES30.GL_NO_ERROR
     /**
      * Black-frame watchdog flag (P0 2026-10-17): set when a new source
      * bitmap is uploaded; the next completed render samples the
@@ -2073,6 +2077,10 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                 val buf = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
                 var inImage = 0
                 var brightSource = false
+                // Drain any stale error flag so per-sample checks below
+                // reflect THIS readback only (same silent-failure pattern as
+                // readHistogram()).
+                GLES30.glGetError()
                 for (gy in 0..2) {
                     for (gx in 0..2) {
                         val x = (w * (gx + 1) / 4).coerceIn(0, w - 1)
@@ -2082,6 +2090,15 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                         buf.position(0)
                         GLES30.glReadPixels(x, yGl, 1, 1,
                             GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+                        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+                            // Silent readback failure: buf holds zeros, which
+                            // would read as "black framebuffer" and, against
+                            // a bright source, trip the watchdog for a GPU
+                            // that rendered fine. Skip the sample instead;
+                            // if none are valid, inImage stays 0 and the
+                            // check exits quietly. Never trip on bad data.
+                            continue
+                        }
                         val r = buf.get(0).toInt() and 0xFF
                         val g = buf.get(1).toInt() and 0xFF
                         val b = buf.get(2).toInt() and 0xFF
@@ -2146,7 +2163,29 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                 readBuf = buf
             }
             buf.position(0)
+            // Drain any stale error flag so the check below reflects THIS
+            // readback only.
+            GLES30.glGetError()
             GLES30.glReadPixels(0, 0, w, h, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+            val err = GLES30.glGetError()
+            if (err != GLES30.GL_NO_ERROR) {
+                // glReadPixels never throws: without this check a silent
+                // driver failure (seen on Mali: readback fails while the
+                // preview itself renders fine) feeds black or stale pixels
+                // into the histogram, waveform, vectorscope, RGB parade AND
+                // the black-frame watchdog's luma — five consumers corrupted
+                // by one silent failure, with nothing in logcat to explain
+                // the flat/stale histogram. Skip the sample instead; the
+                // next throttled readback retries. Log only on change so a
+                // persistently broken readback doesn't spam logcat.
+                if (err != lastHistGlError) {
+                    lastHistGlError = err
+                    android.util.Log.w("EditorGlView",
+                        "histogram readback GL error: 0x" + err.toString(16))
+                }
+                return
+            }
+            lastHistGlError = GLES30.GL_NO_ERROR
             v.onFrameBytes(buf, w, h)
         }
     }
