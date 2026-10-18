@@ -102,6 +102,17 @@ fun RetouchPanel(
                 Text(if (aiProRetouchApplied) "Undo AI Pro Retouch" else "AI Pro Retouch")
             }
         }
+        // Honesty (never fake AI): v1 is adaptive on-device photo analysis
+        // over the app's curated pro-recipe grade bank — NOT a trained
+        // neural network. The user chose this open heuristic as Step 1;
+        // Step 2 is the trained predictor. One plain caption keeps the
+        // claim honest in-app, matching the engine's documented policy.
+        Text(
+            "V1 analyzes each photo on-device and blends pro-recipe grades — adaptive, not a trained neural network.",
+            style = Lumora.type.caption,
+            color = Lumora.colors.textTertiary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+        )
         aiOutcome?.let { outcome ->
             val caption = when (outcome) {
                 is EditorViewModel.AiProRetouchOutcome.Applied ->
