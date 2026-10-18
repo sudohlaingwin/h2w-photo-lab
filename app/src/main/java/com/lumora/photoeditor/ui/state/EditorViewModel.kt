@@ -268,6 +268,15 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     private var proAutoJob: Job? = null
     private var autoRetouchJob: Job? = null
     private var autoDenoiseJob: Job? = null
+    private var aiProRetouchJob: Job? = null
+    /**
+     * True while an AI Pro Retouch grade is the live state — i.e. the last
+     * tap applied and nothing (manual edit, undo, photo open) has
+     * invalidated it since. Drives the toggle: a second tap while true
+     * reverts to [autoBaseline] instead of re-applying.
+     */
+    private val _aiProRetouchApplied = MutableStateFlow(false)
+    val aiProRetouchApplied: StateFlow<Boolean> = _aiProRetouchApplied.asStateFlow()
     /**
      * Photo-change race guard (extends the 13:52 coverage to every
      * photo-analysis path). Analysis runs on Dispatchers.Default while the
@@ -529,6 +538,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 proAutoJob?.cancel()
                 autoRetouchJob?.cancel()
                 autoDenoiseJob?.cancel()
+                aiProRetouchJob?.cancel()
                 val uri = Uri.parse(img.contentUri)
                 val bmp = withContext(Dispatchers.IO) { decodePreview(uri) }
                     ?: throw IllegalStateException("Could not decode this image")
@@ -2901,6 +2911,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         _autoEnhanceApplied.value = false
         _proAutoApplied.value = false
         _autoRetouchApplied.value = false
+        _aiProRetouchApplied.value = false
     }
 
     /**
@@ -3169,6 +3180,15 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Outcome of one-tap AI Pro Retouch (image-adaptive pro grade). */
+    sealed interface AiProRetouchOutcome {
+        data class Applied(val summary: String) : AiProRetouchOutcome
+        data object Reverted : AiProRetouchOutcome
+        data object Stale : AiProRetouchOutcome
+        data object NoChange : AiProRetouchOutcome
+        data object Failed : AiProRetouchOutcome
+    }
+
     /**
      * AI Pro Retouch — one-tap image-adaptive pro grade.
      *
@@ -3179,26 +3199,42 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * light params so they stay tweakable. Everything lands in a single
      * undoable "AI Pro Retouch" history entry.
      *
+     * A true TOGGLE (user decision 2026-10-17, same contract as Auto Enhance
+     * / Pro Auto / Auto Retouch): the first tap applies the best result; the
+     * second tap reverts to the exact pre-auto state (မူလအတိုင်း), as one
+     * undoable edit — repeated taps can never stack brighter. [onDone]
+     * reports what happened so the UI can confirm it instead of staying
+     * silent. Always invoked on the main thread.
+     *
      * Honest no-op: when the photo is blank or already balanced
      * ([AiProRetouch.LutBlend.strength] == 0) nothing is pushed to undo and
-     * [onDone] reports that instead of pretending work happened.
-     * Idempotent: re-tapping recomputes the same grade onto the pre-auto
-     * baseline ([autoBase]) instead of stacking clarity/texture/dehaze
-     * deltas, so repeat taps can't degrade the result or spam undo history.
-     * Always invoked on the main thread.
+     * [onDone] reports [AiProRetouchOutcome.NoChange] instead of pretending
+     * work happened.
      */
-    fun applyAiProRetouch(onDone: (String?) -> Unit = {}) {
-        val bmp = snapshotPreview() ?: run { onDone(null); return }
-        // Idempotency (same bug class as Auto Enhance, fixed 14:32): capture
-        // the pre-auto baseline on the main thread and apply every tap onto
-        // it, so repeat taps recompute the same grade instead of stacking the
-        // clarity/texture/dehaze deltas (which also made Clear subtract only
-        // one delta, leaving stacked residue behind).
+    fun applyAiProRetouch(onDone: (AiProRetouchOutcome) -> Unit = {}) {
+        // Toggle-off: restore the pinned pre-auto snapshot. Captured before
+        // update(), which clears the baseline itself.
+        if (_aiProRetouchApplied.value) {
+            val base = autoBaseline
+            _aiProRetouchApplied.value = false
+            if (base != null) {
+                update("AI Pro Retouch off") { _ -> base }
+                onDone(AiProRetouchOutcome.Reverted)
+            } else {
+                onDone(AiProRetouchOutcome.Stale)
+            }
+            return
+        }
+        val bmp = snapshotPreview() ?: run { onDone(AiProRetouchOutcome.Failed); return }
+        // Capture on the main thread before the background analysis: every
+        // tap re-applies onto the pre-auto state, so re-tapping can't stack
+        // the clarity/texture/dehaze deltas (idempotent).
         val base = autoBase()
         // Photo-change race: the fused LUT belongs to this photo; the
         // main-thread apply block bails if another photo is open by then.
         val tapPhotoId = _libraryImage.value?.id
-        guardLaunch(Dispatchers.Default) {
+        aiProRetouchJob?.cancel()
+        aiProRetouchJob = guardLaunch(Dispatchers.Default) {
             try {
                 val w = bmp.width; val h = bmp.height
                 val scale = minOf(1f, 160f / maxOf(w, h))
@@ -3210,11 +3246,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 if (small != bmp) small.recycle()
                 val blend = AiProRetouch.analyze(pixels, sw, sh)
                 if (blend.strength <= 0f) {
-                    withContext(Dispatchers.Main) { onDone("Already balanced — no changes needed") }
+                    withContext(Dispatchers.Main) { onDone(AiProRetouchOutcome.NoChange) }
                     return@guardLaunch
                 }
                 if (!AiLutBank.available) {
-                    withContext(Dispatchers.Main) { onDone("AI grade unavailable on this device") }
+                    withContext(Dispatchers.Main) { onDone(AiProRetouchOutcome.Failed) }
                     return@guardLaunch
                 }
                 // GL thread first: bake the bank once, fuse this photo's LUT,
@@ -3225,7 +3261,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 val engine = glEngineRef
                 val previewBmp = _preview.value
                 if (host == null || engine == null || previewBmp == null) {
-                    withContext(Dispatchers.Main) { onDone(null) }
+                    withContext(Dispatchers.Main) { onDone(AiProRetouchOutcome.Failed) }
                     return@guardLaunch
                 }
                 val done = CompletableDeferred<Boolean>()
@@ -3266,7 +3302,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 invalidateGpuAssets()
                 withContext(Dispatchers.Main) {
                     if (!uploaded) {
-                        onDone("AI grade unavailable on this device")
+                        onDone(AiProRetouchOutcome.Failed)
                         return@withContext
                     }
                     if (_libraryImage.value?.id != tapPhotoId) {
@@ -3275,7 +3311,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         // and apply nothing (the LUT slot stays gated off
                         // for the new photo's state, so no stale grade can
                         // leak into its preview).
-                        onDone(null)
+                        onDone(AiProRetouchOutcome.NoChange)
                         return@withContext
                     }
                     val weights = blend.weights.toList()
@@ -3312,37 +3348,19 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     // cleared, so the next tap snapshots fresh.
                     if (currentAtApply == base || currentAtApply == next) {
                         autoBaseline = base
+                        _aiProRetouchApplied.value = true
                     }
                     val pct = (blend.strength * 100).toInt()
                     val wbNote = if (blend.wbGains != null) " + white balance" else ""
-                    onDone("${blend.sceneName} grade · $pct%$wbNote")
+                    onDone(AiProRetouchOutcome.Applied("${blend.sceneName} grade · $pct%$wbNote"))
                 }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 android.util.Log.w("EditorVM", "aiProRetouch failed", t)
-                withContext(Dispatchers.Main) { onDone(null) }
+                withContext(Dispatchers.Main) { onDone(AiProRetouchOutcome.Failed) }
             } finally {
                 if (!bmp.isRecycled) bmp.recycle()
             }
-        }
-    }
-
-    /**
-     * Removes the AI Pro Retouch grade: disables the LUT and subtracts
-     * exactly the spatial deltas it added. One undoable entry.
-     */
-    fun clearAiProRetouch() {
-        val cur = _state.value.aiRetouch
-        if (!cur.enabled) return
-        update("Clear AI Pro Retouch") { s ->
-            s.copy(
-                light = s.light.copy(
-                    clarity = (s.light.clarity - cur.clarityDelta).coerceIn(-100f, 100f),
-                    texture = (s.light.texture - cur.textureDelta).coerceIn(-100f, 100f),
-                    dehaze = (s.light.dehaze - cur.dehazeDelta).coerceIn(-100f, 100f),
-                ),
-                aiRetouch = AiRetouchParams(),
-            )
         }
     }
 

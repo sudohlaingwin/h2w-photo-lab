@@ -67,16 +67,20 @@ fun RetouchPanel(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         // ---- AI Pro Retouch: one-tap image-adaptive pro grade ----
+        // A true toggle (user decision 2026-10-17): first tap applies the
+        // best result, second tap reverts to the exact pre-auto state —
+        // repeated taps can never stack brighter.
         val aiRetouch = state.aiRetouch
+        val aiProRetouchApplied by vm.aiProRetouchApplied.collectAsState()
         var aiRunning by remember { mutableStateOf(false) }
-        var aiResult by remember { mutableStateOf<String?>(null) }
+        var aiOutcome by remember { mutableStateOf<EditorViewModel.AiProRetouchOutcome?>(null) }
         LumoraButton(
             onClick = {
                 aiRunning = true
-                aiResult = null
-                vm.applyAiProRetouch { msg ->
+                aiOutcome = null
+                vm.applyAiProRetouch { outcome ->
                     aiRunning = false
-                    aiResult = msg
+                    aiOutcome = outcome
                 }
             },
             enabled = !aiRunning,
@@ -95,16 +99,29 @@ fun RetouchPanel(
                 Icon(LumoraIcons.Style, contentDescription = null,
                     modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("AI Pro Retouch")
+                Text(if (aiProRetouchApplied) "Undo AI Pro Retouch" else "AI Pro Retouch")
             }
         }
-        aiResult?.let {
-            Text(
-                it,
-                style = Lumora.type.caption,
-                color = Lumora.colors.textSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+        aiOutcome?.let { outcome ->
+            val caption = when (outcome) {
+                is EditorViewModel.AiProRetouchOutcome.Applied ->
+                    "${outcome.summary} — tap Undo AI Pro Retouch to revert"
+                is EditorViewModel.AiProRetouchOutcome.Reverted ->
+                    "AI Pro Retouch off — back to the pre-auto state"
+                is EditorViewModel.AiProRetouchOutcome.Stale ->
+                    "You edited after AI Pro Retouch — use Undo to go back"
+                is EditorViewModel.AiProRetouchOutcome.NoChange ->
+                    "Already balanced — no changes needed"
+                is EditorViewModel.AiProRetouchOutcome.Failed -> null
+            }
+            if (caption != null) {
+                Text(
+                    caption,
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
         }
         if (aiRetouch.enabled) {
             // Pin the AI-chosen strength as the double-tap / TalkBack reset
@@ -137,17 +154,6 @@ fun RetouchPanel(
                 onBegin = { vm.beginGesture() },
                 onEnd = { vm.endGesture("AI Pro Retouch intensity") },
             )
-            LumoraOutlineButton(
-                onClick = {
-                    vm.clearAiProRetouch()
-                    aiResult = null
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                Text("Remove AI grade")
-            }
         }
         // Auto Retouch: adaptive one-tap retouch — a true toggle (user
         // decision 2026-10-17): first tap applies the best result, second
