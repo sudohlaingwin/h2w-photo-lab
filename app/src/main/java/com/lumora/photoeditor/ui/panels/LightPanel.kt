@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 
-/** Result feedback for the header Auto Enhance action: null summary = analysis failed. */
 /** One-tap prompt-edit examples (each is a working prompt). */
 private val promptExamples = listOf(
     "Dramatic sky",
@@ -67,7 +66,6 @@ fun LightPanel(
     val vectorscope by vm.vectorscope.collectAsState()
     val rgbParade by vm.rgbParade.collectAsState()
     val l = state.light
-    var showCurve by remember { mutableStateOf(false) }
     var scopeMode by remember { mutableStateOf(0) } // 0 = histogram, 1 = waveform, 2 = vectorscope, 3 = RGB parade
 
     PanelColumn {
@@ -350,13 +348,13 @@ fun LightPanel(
             }
         }
 
-        PanelSection("Tone curve", initiallyExpanded = showCurve) {
+        // Single disclosure mechanism: the section header's chevron expands /
+        // collapses the curve editor. The old "Edit curve" button fought the
+        // section state — CollapsibleSection reads initiallyExpanded only
+        // once, so the button's toggles never reached the section and the
+        // editor appeared stuck.
+        PanelSection("Tone curve", initiallyExpanded = false) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                LumoraTextButton(onClick = { showCurve = !showCurve }) {
-                    androidx.compose.material3.Text(
-                        if (showCurve) "Hide curve" else "Edit curve",
-                        color = Lumora.colors.accent, style = Lumora.type.caption)
-                }
                 // Lightroom parity: targeted adjustment — drag on the photo
                 // to bend the selected channel's curve at the touched tone.
                 LumoraTextButton(onClick = onCurveTarget) {
@@ -373,75 +371,73 @@ fun LightPanel(
                         color = tint, style = Lumora.type.caption)
                 }
             }
-            if (showCurve) {
-                val channels = listOf("Master" to 0, "Red" to 1, "Green" to 2, "Blue" to 3)
-                SegmentedControl(
-                    options = channels.map { it.second to it.first },
-                    selected = curveChannel,
-                    onSelect = onCurveChannel,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-                val curve = when (curveChannel) {
-                    1 -> l.redCurve; 2 -> l.greenCurve; 3 -> l.blueCurve
-                    else -> l.toneCurve
+            val channels = listOf("Master" to 0, "Red" to 1, "Green" to 2, "Blue" to 3)
+            SegmentedControl(
+                options = channels.map { it.second to it.first },
+                selected = curveChannel,
+                onSelect = onCurveChannel,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            val curve = when (curveChannel) {
+                1 -> l.redCurve; 2 -> l.greenCurve; 3 -> l.blueCurve
+                else -> l.toneCurve
+            }
+            val channelName = channels.first { it.second == curveChannel }.first
+            // One reset path for the visual preset chips AND the TalkBack
+            // "Reset curve to linear" accessibility action (TalkBack
+            // gestures never reach double-tap).
+            fun applyCurvePreset(preset: CurvePreset, label: String = preset.label) {
+                vm.update("Tone curve: $label") { s ->
+                    val nc = ToneCurve(preset.points)
+                    val nl = when (curveChannel) {
+                        1 -> s.light.copy(redCurve = nc)
+                        2 -> s.light.copy(greenCurve = nc)
+                        3 -> s.light.copy(blueCurve = nc)
+                        else -> s.light.copy(toneCurve = nc)
+                    }
+                    s.copy(light = nl)
                 }
-                val channelName = channels.first { it.second == curveChannel }.first
-                // One reset path for the visual preset chips AND the TalkBack
-                // "Reset curve to linear" accessibility action (TalkBack
-                // gestures never reach double-tap).
-                fun applyCurvePreset(preset: CurvePreset, label: String = preset.label) {
-                    vm.update("Tone curve: $label") { s ->
-                        val nc = ToneCurve(preset.points)
+            }
+            // Lightroom parity: named point-curve presets for the active channel.
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(CurvePreset.entries) { preset ->
+                    LumoraChip(
+                        selected = curve.activePreset() == preset,
+                        onClick = { applyCurvePreset(preset) },
+                        label = { Text(preset.label) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            val accent = when (curveChannel) {
+                1 -> Color(0xFFE5484D); 2 -> Color(0xFF46A758); 3 -> Color(0xFF3E8EDE)
+                else -> Lumora.colors.accent
+            }
+            ToneCurveEditor(
+                curve = curve,
+                accent = accent,
+                histogram = histogram,
+                histChannel = curveChannel,
+                channelLabel = channelName,
+                onReset = { applyCurvePreset(CurvePreset.LINEAR) },
+                onBegin = { vm.beginGesture() },
+                onChange = { c ->
+                    vm.update(gesture = true) { s ->
                         val nl = when (curveChannel) {
-                            1 -> s.light.copy(redCurve = nc)
-                            2 -> s.light.copy(greenCurve = nc)
-                            3 -> s.light.copy(blueCurve = nc)
-                            else -> s.light.copy(toneCurve = nc)
+                            1 -> s.light.copy(redCurve = c)
+                            2 -> s.light.copy(greenCurve = c)
+                            3 -> s.light.copy(blueCurve = c)
+                            else -> s.light.copy(toneCurve = c)
                         }
                         s.copy(light = nl)
                     }
-                }
-                // Lightroom parity: named point-curve presets for the active channel.
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(CurvePreset.entries) { preset ->
-                        LumoraChip(
-                            selected = curve.activePreset() == preset,
-                            onClick = { applyCurvePreset(preset) },
-                            label = { Text(preset.label) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                val accent = when (curveChannel) {
-                    1 -> Color(0xFFE5484D); 2 -> Color(0xFF46A758); 3 -> Color(0xFF3E8EDE)
-                    else -> Lumora.colors.accent
-                }
-                ToneCurveEditor(
-                    curve = curve,
-                    accent = accent,
-                    histogram = histogram,
-                    histChannel = curveChannel,
-                    channelLabel = channelName,
-                    onReset = { applyCurvePreset(CurvePreset.LINEAR) },
-                    onBegin = { vm.beginGesture() },
-                    onChange = { c ->
-                        vm.update(gesture = true) { s ->
-                            val nl = when (curveChannel) {
-                                1 -> s.light.copy(redCurve = c)
-                                2 -> s.light.copy(greenCurve = c)
-                                3 -> s.light.copy(blueCurve = c)
-                                else -> s.light.copy(toneCurve = c)
-                            }
-                            s.copy(light = nl)
-                        }
-                    },
-                    onEnd = { vm.endGesture("Tone curve") },
-                )
-            }
+                },
+                onEnd = { vm.endGesture("Tone curve") },
+            )
         }
     }
 }
