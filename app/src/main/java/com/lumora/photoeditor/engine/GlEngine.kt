@@ -43,6 +43,13 @@ class GlEngine {
     private val deconScratch = FloatArray(MAX_MASKS)
     /** Shared 3-float scratch for the grade-wheel uploads (used immediately). */
     private val wheelScratch = FloatArray(3)
+    /**
+     * Shared 3x3 scratch for the loupe's NDC->UV matrix. renderLoupe runs
+     * exclusively on the GL thread (like every other path through render())
+     * and the matrix is fully rewritten on every call before use, so
+     * reusing it is race-free and can never leak a stale transform.
+     */
+    private val loupeMatrixScratch = FloatArray(9)
     /** Texture-unit bindings for the mask sampler array (uMaskTex). */
     private val maskUnits = intArrayOf(4, 5, 6, 7)
     /** Texture-unit bindings for the decon despill sampler array (uDeconTex). */
@@ -1016,8 +1023,9 @@ class GlEngine {
      * Reuses the engine's already-uploaded assets (source, curves, masks,
      * retouch, FX) — call it on the GL thread while the preview's assets are
      * current and the bitmap shows exactly the pixels under the finger,
-     * including the in-progress retouch stroke. The GL viewport is saved
-     * and restored so the on-screen preview is unaffected.
+     * including the in-progress retouch stroke. The viewport is saved and
+     * restored by renderOffscreen (withSavedViewport), so the on-screen
+     * preview is unaffected — do not add another save/restore here.
      *
      * The loupe is square; [brushRadiusUv] (fraction of image width) sizes
      * the window so the brush and its surroundings stay visible.
@@ -1036,19 +1044,18 @@ class GlEngine {
         val cy = if (half >= 0.5f) 0.5f else uv.y.coerceIn(half, 1f - half)
         // Column-major 3x3 mapping NDC(-1..1) -> source UV: the same
         // convention the preview's touchToUv inverts, so the window centers
-        // exactly on the touch point.
-        val matrix = floatArrayOf(
-            half, 0f, 0f,
-            0f, half, 0f,
-            cx, cy, 1f,
-        )
-        val vp = IntArray(4)
-        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, vp, 0)
-        return try {
-            renderOffscreen(state, matrix, sizePx, sizePx, opts)
-        } finally {
-            GLES30.glViewport(vp[0], vp[1], vp[2], vp[3])
-        }
+        // exactly on the touch point. Written into the shared GL-thread-only
+        // scratch (fully rewritten on every call — see field docs), so the
+        // loupe allocates nothing on the GL thread while painting.
+        val matrix = loupeMatrixScratch
+        matrix[0] = half; matrix[1] = 0f; matrix[2] = 0f
+        matrix[3] = 0f; matrix[4] = half; matrix[5] = 0f
+        matrix[6] = cx; matrix[7] = cy; matrix[8] = 1f
+        // No viewport save/restore here: renderOffscreen wraps the whole
+        // render in withSavedViewport, so the save/restore that used to
+        // live here was redundant (two extra driver calls plus an IntArray
+        // on every loupe frame while painting).
+        return renderOffscreen(state, matrix, sizePx, sizePx, opts)
     }
 
     fun release() {
