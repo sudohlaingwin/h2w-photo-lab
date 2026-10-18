@@ -130,6 +130,11 @@ object WaveletDecompose {
 
     /** Mirrored edge handling: -1 → 0, w → w-1, w+1 → w-2, etc. */
     private fun mirror(i: Int, n: Int): Int {
+        // Degenerate 1-px dimension: every tap mirrors to the single pixel.
+        // Without this, the while loop below never terminates for n == 1
+        // (2*n-2 == 0 makes v ping-pong between v and -v forever) — an ANR
+        // on any 1-px-wide/tall input.
+        if (n <= 1) return 0
         var v = i
         while (v < 0 || v >= n) {
             v = if (v < 0) -v else 2 * n - 2 - v
@@ -169,6 +174,79 @@ object WaveletDecompose {
             }
             out
         } else residual
-        return reconstruct(details, evenResidual, w, h, smoothing)
+        // Edge-preserving reconstruction (2026-10-18, "plastic face" fix):
+        // uniform per-scale attenuation crushed ALL mid-frequency structure —
+        // pores survived (scales 0-1 kept) while the skin's mid-band form was
+        // flattened to the slider factor, the classic over-retouched wax look.
+        // Coring keeps strong features (lip line, nostril shadow, eye corners)
+        // and only crushes weak detail (grain, micro-blotchiness).
+        return reconstructCored(details, evenResidual, w, h, smoothing)
+    }
+
+    /**
+     * Coring (amplitude-adaptive) attenuation thresholds, in 0..255 RGB units.
+     *
+     * A detail sample weaker than [CORE_LO] is treated as noise/blotchiness and
+     * is attenuated down to the slider's keep factor; a sample stronger than
+     * [CORE_HI] is a real facial feature and is kept nearly whole. A smoothstep
+     * ramp blends the two so there is no visible threshold contour. Tuned from
+     * measured mid-scale detail amplitudes at 1024px-max working resolution:
+     * grain/micro-blotch detail peaks around 2-5, while real structural
+     * features (nose-shadow-class soft bumps) peak around 9-12.
+     */
+    private const val CORE_LO = 3f
+    private const val CORE_HI = 9f
+
+    /**
+     * Reconstructs like [reconstruct], but the per-scale keep factor is only
+     * the *floor*: per detail sample the effective keep ramps from that floor
+     * toward 1 as the sample's luma amplitude grows from [CORE_LO] to
+     * [CORE_HI]. One gate per pixel (luma-weighted) keeps all three channels
+     * consistent — per-channel gating would shift hues at strong edges.
+     * Scales with keep >= 0.999 take the exact fast path, so identity
+     * reconstruction (all keeps = 1) is bit-identical to [reconstruct].
+     */
+    private fun reconstructCored(
+        details: List<FloatArray>,
+        residual: FloatArray,
+        w: Int, h: Int,
+        baseKeep: FloatArray,
+    ): IntArray {
+        val n = w * h
+        val rgb = FloatArray(n * 3) { residual[it] }
+        val inv = 1f / (CORE_HI - CORE_LO)
+        for ((s, detail) in details.withIndex()) {
+            val k = baseKeep.getOrNull(s)?.coerceIn(0f, 1f) ?: 1f
+            if (k >= 0.999f) {
+                for (i in 0 until n * 3) rgb[i] += detail[i]
+                continue
+            }
+            if (k <= 0.001f) continue // full smoothing: skip this scale
+            val crush = 1f - k
+            var p = 0
+            for (px in 0 until n) {
+                val dr = detail[p]
+                val dg = detail[p + 1]
+                val db = detail[p + 2]
+                val amp = 0.299f * kotlin.math.abs(dr) +
+                        0.587f * kotlin.math.abs(dg) +
+                        0.114f * kotlin.math.abs(db)
+                var t = ((amp - CORE_LO) * inv).coerceIn(0f, 1f)
+                t = t * t * (3f - 2f * t) // smoothstep
+                val keep = k + crush * t
+                rgb[p] += dr * keep
+                rgb[p + 1] += dg * keep
+                rgb[p + 2] += db * keep
+                p += 3
+            }
+        }
+        val out = IntArray(n)
+        for (i in 0 until n) {
+            val r = rgb[i * 3].toInt().coerceIn(0, 255)
+            val g = rgb[i * 3 + 1].toInt().coerceIn(0, 255)
+            val b = rgb[i * 3 + 2].toInt().coerceIn(0, 255)
+            out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        return out
     }
 }
