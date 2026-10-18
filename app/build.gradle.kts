@@ -27,12 +27,29 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // Stable debug signing key (2026-10-18): the default ~/.android/debug.keystore
+    // lives outside the workspace and is regenerated whenever the VM is
+    // replaced — each regen changes the APK signature, so install-over-the-top
+    // fails and the user must uninstall, wiping his Gemini API key and all app
+    // data. debug.keystore is pinned in the repo (same well-known android/
+    // androiddebugkey debug credentials AGP uses; a debug key is not a
+    // secret) so every future build carries the same signature forever.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
+            signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".debug"
             // Debug APKs are delivered directly to the user's arm64 phone via
             // Drive, not the Play Store. Ship arm64-v8a only: drops ~30MB of
