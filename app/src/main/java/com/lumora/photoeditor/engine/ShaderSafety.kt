@@ -31,7 +31,15 @@ package com.lumora.photoeditor.engine
  * fragment shaders even when the loop bound is constant. The loops are now
  * unrolled and the audit flags any non-constant index into any declared
  * array, sampler or not.
- * This audit scans every shipped shader for all six patterns so a
+ * Rule (g) covers the remaining spec-level hazard: ES 1.00-only built-ins
+ * (`gl_FragColor`, `gl_FragData`, `gl_TexCoord`, `texture2D*` / `textureCube*` /
+ * `shadow2D*`, and the `varying` / `attribute` qualifiers) appearing in a
+ * `#version 300 es` source. These are compile errors per the ES 3.00 spec —
+ * lenient drivers sometimes accept the familiar names, but strict (Mali)
+ * drivers reject the whole program, which for the preview shaders means a
+ * black screen. Scoped to ES 3.00 sources only, like rule (c): ES 1.00
+ * shaders legitimately use all of these.
+ * This audit scans every shipped shader for all seven patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
  * tests.
@@ -115,6 +123,27 @@ object ShaderSafety {
     private val localArrayDecl =
         Regex("""^\s*(?:const\s+)?(?:float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;""")
 
+    /**
+     * ES 1.00-only built-ins: compile errors in a `#version 300 es` source
+     * that strict (Mali) drivers reject outright (lenient drivers sometimes
+     * accept the familiar names, which is why this ships as an audit rule
+     * rather than a build error). `gl_FragCoord` is deliberately NOT in the
+     * list — it is a valid ES 3.00 built-in. The `\b` boundaries keep
+     * `gl_FragCoord` (which contains no `gl_FragColor` substring) and
+     * identifiers like `mytexture2D` (no boundary before the `t`) from
+     * matching.
+     */
+    private val es100Builtins = listOf(
+        Regex("""\bgl_FragColor\b"""),
+        Regex("""\bgl_FragData\b"""),
+        Regex("""\bgl_TexCoord\b"""),
+        Regex("""\btexture2D\w*\s*\("""),
+        Regex("""\btextureCube\w*\s*\("""),
+        Regex("""\bshadow2D\w*\s*\("""),
+        Regex("""\bvarying\b"""),
+        Regex("""\battribute\b"""),
+    )
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -137,6 +166,11 @@ object ShaderSafety {
      *    (dynamic loop bound — a classic Mali miscompile hazard), and
      *  - any `while` / `do`-`while` condition naming an identifier
      *    (dynamic while condition — the same hazard class as (d)), and
+     *  - any ES 1.00-only built-in (`gl_FragColor`, `texture2D*`,
+     *    `varying`, `attribute`, …) in a `#version 300 es` source —
+     *    a spec-level compile error that strict Mali drivers reject
+     *    outright (lenient drivers sometimes accept the familiar names),
+     *    and
      *  - any non-sampler array (uniform or local) indexed with a
      *    non-constant expression — the loop-indexed `uHsl[i]` / `uBwMix[i]` /
      *    `centers[i]` HSL/B&W mixer loops shipped exactly this until
@@ -183,6 +217,19 @@ object ShaderSafety {
                 if (isEs300 && unqualifiedSampler.containsMatchIn(line)) {
                     issues += ShaderSafetyIssue(name, idx + 1,
                         "unqualified-sampler", line)
+                }
+                // Rule (g): ES 1.00-only built-ins in an ES 3.00 source are
+                // spec-level compile errors on strict (Mali) drivers.
+                // One issue per line is enough — the offending line names
+                // the builtin.
+                if (isEs300) {
+                    for (builtin in es100Builtins) {
+                        if (builtin.containsMatchIn(line)) {
+                            issues += ShaderSafetyIssue(name, idx + 1,
+                                "es100-builtin", line)
+                            break
+                        }
+                    }
                 }
                 for (sampler in samplers.keys) {
                     val use = Regex(Regex.escape(sampler) + """\s*\[\s*([^\]]*)\]""")

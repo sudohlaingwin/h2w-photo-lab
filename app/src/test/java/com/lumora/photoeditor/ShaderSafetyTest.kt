@@ -85,7 +85,9 @@ class ShaderSafetyTest {
 
     @Test fun unqualified_sampler_ignored_in_es100() {
         // ES 1.00 fragment shaders predeclare a default sampler precision,
-        // so the unqualified form is legal there — the rule is ES 3.00 only.
+        // so the unqualified form is legal there — rules (c) and (g) are
+        // ES 3.00 only, and gl_FragColor/texture2D are the correct ES 1.00
+        // forms.
         val src = """
             #version 100
             precision mediump float;
@@ -273,6 +275,61 @@ class ShaderSafetyTest {
             }
         """.trimIndent()
         assertTrue(ShaderSafety.audit(listOf("LITWHILE" to src)).isEmpty())
+    }
+
+    @Test fun es100_builtins_flagged_in_es300() {
+        // Rule (g): ES 1.00-only built-ins are compile errors in ES 3.00
+        // sources — strict (Mali) drivers reject the whole program.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp sampler2D uImage;
+            void main() {
+                vec4 c = texture2D(uImage, vec2(0.5));
+                gl_FragColor = c;
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("ES100B" to src))
+        assertEquals(2, issues.size)
+        assertTrue(issues.all { it.rule == "es100-builtin" })
+        assertTrue(issues.any { it.line.contains("texture2D") })
+        assertTrue(issues.any { it.line.contains("gl_FragColor") })
+    }
+
+    @Test fun es100_qualifiers_flagged_in_es300_vertex() {
+        // `varying` / `attribute` are ES 1.00 qualifiers; ES 3.00 uses
+        // `in` / `out`. A habitual `attribute` in a 300 es vertex shader is
+        // a strict-driver compile error.
+        val src = """
+            #version 300 es
+            attribute vec2 aPos;
+            varying vec2 vUv;
+            void main() {
+                vUv = aPos;
+                gl_Position = vec4(aPos, 0.0, 1.0);
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("ES100Q" to src))
+        assertEquals(2, issues.size)
+        assertTrue(issues.all { it.rule == "es100-builtin" })
+    }
+
+    @Test fun modern_es300_builtins_pass() {
+        // The ES 3.00 forms — `texture(`, `gl_FragCoord`, `in`/`out` — must
+        // not be over-matched by rule (g).
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp sampler2D uImage;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                vec4 c = texture(uImage, vUv);
+                float d = gl_FragCoord.x;
+                fragColor = c * d;
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("MODERN" to src)).isEmpty())
     }
 
     @Test fun commented_out_code_is_ignored() {
