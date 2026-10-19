@@ -70,14 +70,18 @@ object AiTrainingPolicy {
      */
     fun isBlocked(datasetName: String): Boolean {
         val key = datasetName.trim().lowercase()
-        val canonical = ALIASES[key] ?: key
+        // The alias values are display-case ("MIT-Adobe FiveK"); lowercase
+        // them too, or every aliased lookup (including the exact canonical
+        // names "PPR10K"/"FiveK") compares "ppr10k" == "PPR10K" and wrongly
+        // reports the dataset as NOT blocked.
+        val canonical = (ALIASES[key] ?: key).lowercase()
         return BLOCKED.any { it.name.lowercase() == canonical }
     }
 
     /** The blocked entry for [datasetName], or null when not blocked. */
     fun blockedEntry(datasetName: String): BlockedSource? {
         val key = datasetName.trim().lowercase()
-        val canonical = ALIASES[key] ?: key
+        val canonical = (ALIASES[key] ?: key).lowercase()
         return BLOCKED.firstOrNull { it.name.lowercase() == canonical }
     }
 }
