@@ -1,7 +1,11 @@
 package com.lumora.photoeditor.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -185,8 +189,34 @@ fun SettingsScreen(
                 // build on the phone, so a stale pre-fix APK can be told
                 // apart from the current one when diagnosing the black
                 // preview. Baked at build time from the git SHA + date.
-                Text("Build ${BuildConfig.BUILD_DATE} · ${BuildConfig.GIT_SHA}",
-                    style = type.caption, color = colors.textTertiary)
+                // Tap-to-copy (2026-10-19): he reports the build over chat,
+                // so one tap copies the full fingerprint to the clipboard
+                // instead of him retyping the git SHA from the screen.
+                val buildInfo =
+                    "H2W Photo Lab 1.0.0 · Build ${BuildConfig.BUILD_DATE} · ${BuildConfig.GIT_SHA}"
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = "Copy build info",
+                            onClick = {
+                                val cm = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(
+                                    ClipData.newPlainText("H2W Photo Lab build", buildInfo))
+                                Toast.makeText(context, "Build info copied",
+                                    Toast.LENGTH_SHORT).show()
+                            },
+                        )
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Build ${BuildConfig.BUILD_DATE} · ${BuildConfig.GIT_SHA}",
+                        style = type.caption, color = colors.textTertiary,
+                        modifier = Modifier.weight(1f))
+                    Text("Copy", style = type.caption, color = colors.accent)
+                }
                 Text("Non-destructive photo editor. Originals are never modified; " +
                     "edits live in sidecar files and can be undone any time.",
                     style = type.caption, color = colors.textTertiary)
