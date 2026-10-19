@@ -142,4 +142,35 @@ class AutoEnhanceCoreTest {
         assertTrue("dark-bg portrait must not crush exposure, was ${s.exposure}",
             s.exposure > -1.5f)
     }
+
+    /** High-key scene (bright studio/airy landscape): exposure darkens
+     *  toward the 0.68 target instead of pushing brighter, and blacks drop
+     *  to the -30 floor to keep the airy look from graying out. */
+    @Test fun highKeyScene_darkensTowardTargetAndDropsBlacks() {
+        // Deterministic two-tone: 90% at 235, 10% at 180 (std >> uniform guard).
+        val photo = IntArray(200 * 200) { i -> gray(if (i < 36000) 235 else 180) }
+        val s = AutoEnhanceCore.analyzePixels(photo, 200, 200)
+        assertTrue("high-key must darken, exposure was ${s.exposure}",
+            s.exposure in -0.8f..-0.1f)
+        assertTrue("high-key blacks must sit at the -30 floor, was ${s.blacks}",
+            s.blacks == -30f)
+        assertTrue("high-key contrast must stay gentle, was ${s.contrast}",
+            s.contrast in 5f..20f)
+    }
+
+    /** Backlit scene (dark subject + bright background): the branch that
+     *  pins highlights to -50 and shadows to +55 for subject recovery. */
+    @Test fun backlitScene_recoversSubjectWithPinnedHighlightsShadows() {
+        // Deterministic: 40% at 40, 60% at 230 -> darkRatio 0.4, brightRatio
+        // 0.6, p95-p5 = 190 > 150.
+        val photo = IntArray(200 * 200) { i -> gray(if (i < 16000) 40 else 230) }
+        val s = AutoEnhanceCore.analyzePixels(photo, 200, 200)
+        assertTrue("backlit highlights pinned to -50, was ${s.highlights}",
+            s.highlights == -50f)
+        assertTrue("backlit shadows pinned to +55, was ${s.shadows}",
+            s.shadows == 55f)
+        assertTrue("backlit clarity is 12, was ${s.clarity}", s.clarity == 12f)
+        assertTrue("backlit exposure must not push up, was ${s.exposure}",
+            s.exposure in -1f..0f)
+    }
 }
