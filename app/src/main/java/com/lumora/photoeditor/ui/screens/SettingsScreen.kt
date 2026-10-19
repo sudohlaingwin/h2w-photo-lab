@@ -349,7 +349,16 @@ private fun DeveloperPopup(onDismiss: () -> Unit) {
                             Intent.ACTION_VIEW,
                             Uri.parse("https://www.facebook.com/share/1HdRKfwsMs/"),
                         )
-                        context.startActivity(intent)
+                        // Devices without a browser (restricted profiles)
+                        // throw here — show a notice instead of crashing
+                        // out of the developer popup.
+                        try {
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            Toast.makeText(context,
+                                "No app available to open the link",
+                                Toast.LENGTH_LONG).show()
+                        }
                     },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(

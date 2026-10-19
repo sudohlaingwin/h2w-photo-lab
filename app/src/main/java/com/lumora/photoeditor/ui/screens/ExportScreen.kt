@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -188,7 +189,17 @@ fun ExportScreen(
                         onShare = {
                             val intent = container.exports.shareIntent(
                                 ui.uri, formatMimeTypeFor(ui.settings.format))
-                            context.startActivity(Intent.createChooser(intent, "Share photo"))
+                            // A share sheet exists on normal devices, but
+                            // managed profiles can disable sharing — never
+                            // crash right after a successful export; the
+                            // photo is already saved to the gallery.
+                            try {
+                                context.startActivity(Intent.createChooser(intent, "Share photo"))
+                            } catch (_: Exception) {
+                                Toast.makeText(context,
+                                    "No app available to share this photo",
+                                    Toast.LENGTH_LONG).show()
+                            }
                         },
                         onDone = onBack,
                     )
