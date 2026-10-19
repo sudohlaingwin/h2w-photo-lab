@@ -1,5 +1,7 @@
 package com.lumora.photoeditor.engine
 
+import kotlin.math.roundToInt
+
 /**
  * À trous ("with holes") wavelet decomposition for professional skin retouching.
  *
@@ -81,11 +83,16 @@ object WaveletDecompose {
             }
             // keep <= 0.001: skip this scale entirely (full smoothing)
         }
+        // Round-to-nearest packing (2026-10-19): the old toInt() truncation
+        // biased every channel down by up to 1 level — the same defect class
+        // as the skin-smoothing chain's (rounding-harness measured -0.70
+        // levels mean darkening there). Identity reconstruction is now
+        // nearest-level exact instead of systematically darkened.
         val out = IntArray(n)
         for (i in 0 until n) {
-            val r = rgb[i * 3].toInt().coerceIn(0, 255)
-            val g = rgb[i * 3 + 1].toInt().coerceIn(0, 255)
-            val b = rgb[i * 3 + 2].toInt().coerceIn(0, 255)
+            val r = rgb[i * 3].roundToInt().coerceIn(0, 255)
+            val g = rgb[i * 3 + 1].roundToInt().coerceIn(0, 255)
+            val b = rgb[i * 3 + 2].roundToInt().coerceIn(0, 255)
             out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
         return out
@@ -240,11 +247,13 @@ object WaveletDecompose {
                 p += 3
             }
         }
+        // Round-to-nearest packing (see reconstruct): truncation here biased
+        // the retouched result down by up to 1 level per channel.
         val out = IntArray(n)
         for (i in 0 until n) {
-            val r = rgb[i * 3].toInt().coerceIn(0, 255)
-            val g = rgb[i * 3 + 1].toInt().coerceIn(0, 255)
-            val b = rgb[i * 3 + 2].toInt().coerceIn(0, 255)
+            val r = rgb[i * 3].roundToInt().coerceIn(0, 255)
+            val g = rgb[i * 3 + 1].roundToInt().coerceIn(0, 255)
+            val b = rgb[i * 3 + 2].roundToInt().coerceIn(0, 255)
             out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
         return out

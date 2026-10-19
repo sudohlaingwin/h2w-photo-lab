@@ -168,6 +168,30 @@ class WaveletCoringTest {
         }
     }
 
+    @Test fun reconstruct_roundTrip_bitExact() {
+        // 2026-10-19: the pack sites use roundToInt, not toInt. Truncation
+        // biased every channel down by up to 1 level (the skin-smoothing
+        // chain measured -0.70 levels mean darkening from the same defect
+        // class); round-to-nearest removes the pack step's error entirely.
+        // The à trous blur chain is well-conditioned (positive weights,
+        // values far below 2^24), so its float noise stays orders of
+        // magnitude under half a level — with unbiased packing the round
+        // trip is bit-exact, through both reconstruct and the retouchSkin
+        // (cored) neutral path. The old truncation measured 1 LSB here.
+        val src = IntArray(w * h) { i ->
+            val x = i % w; val y = i / w
+            gray((x * 3 + y * 2) % 256)
+        }
+        val (details, residual) = WaveletDecompose.decompose(src, w, h)
+        val plain = WaveletDecompose.reconstruct(details, residual, w, h)
+        val cored = WaveletDecompose.retouchSkin(src, w, h, 1f, 0f, 0f)
+        for ((name, out) in listOf("reconstruct" to plain, "retouchSkin" to cored)) {
+            val err = maxChannelError(src, out)
+            println("  $name round-trip max channel error: $err LSB")
+            assertEquals("$name round trip not bit-exact (${err} LSB)", 0, err)
+        }
+    }
+
     @Test(timeout = 15000) fun retouchSkin_degenerate1px_noHang() {
         // mirror() special-cases n <= 1; without it the while loop ping-pongs
         // forever on a 1-px dimension (ANR). This must return, not hang.
