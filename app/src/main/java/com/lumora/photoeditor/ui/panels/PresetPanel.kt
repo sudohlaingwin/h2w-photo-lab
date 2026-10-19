@@ -150,6 +150,45 @@ fun PresetPanel(
         }
     }
 
+    // Back up every custom preset into one versioned JSON file (system
+    // save picker). Custom presets live in app-private storage, which
+    // Android wipes on uninstall — this is the escape hatch before a
+    // reinstall. Restoring goes through the same validation as Import, so
+    // a corrupt entry is skipped, never fatal.
+    var pendingBackup by remember { mutableStateOf<String?>(null) }
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val text = pendingBackup
+        pendingBackup = null
+        if (uri == null || text == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)
+                    ?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            }.getOrNull() != null
+            onNotice(if (ok) "Presets backed up" else "Could not write the backup file")
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)
+                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull()
+            if (text == null) {
+                onNotice("Could not read that backup file")
+                return@launch
+            }
+            val n = container.presets.importBackupJson(text)
+            onNotice(if (n > 0) "Restored $n preset${if (n == 1) "" else "s"}"
+            else "No presets found in that file")
+        }
+    }
+
     // Load user-saved presets from disk on first open.
     LaunchedEffect(Unit) { container.presets.refresh() }
 
@@ -387,6 +426,47 @@ fun PresetPanel(
                     style = Lumora.type.caption)
             }
         }
+        // Bulk backup / restore: reinstalling the app deletes every custom
+        // preset (app-private storage), so back them up first and restore
+        // them after. Restored presets get fresh ids and de-duplicated
+        // names — restoring twice can never collide.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            LumoraOutlineButton(
+                onClick = {
+                    scope.launch {
+                        val backup = container.presets.exportBackupJson()
+                        if (backup == null) {
+                            onNotice("No custom presets to back up")
+                        } else {
+                            pendingBackup = backup
+                            backupLauncher.launch("h2w-presets-backup.json")
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text("Backup presets", color = Lumora.colors.textPrimary,
+                    style = Lumora.type.caption)
+            }
+            LumoraOutlineButton(
+                onClick = { restoreLauncher.launch(arrayOf("application/json")) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text("Restore backup", color = Lumora.colors.textPrimary,
+                    style = Lumora.type.caption)
+            }
+        }
+        Text(
+            "Reinstalling the app deletes your custom presets — back them up first, then restore the file afterwards.",
+            style = Lumora.type.caption,
+            color = Lumora.colors.textTertiary,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
     }
 
     if (saveDialog) {

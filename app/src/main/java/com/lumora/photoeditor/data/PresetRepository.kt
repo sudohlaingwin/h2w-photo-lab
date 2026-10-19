@@ -95,6 +95,41 @@ class PresetRepository(private val context: Context) {
     }
 
     /**
+     * Backs up ALL custom presets into one versioned JSON document (see
+     * [PresetBackupDoc]). Custom presets live in app-private storage, which
+     * Android wipes on uninstall — this is the user's escape hatch before a
+     * reinstall (the one final reinstall for the stable-signing fix would
+     * otherwise delete every custom preset with no way back). Returns null
+     * when there is nothing to back up. Never throws.
+     */
+    suspend fun exportBackupJson(): String? = withContext(Dispatchers.IO) {
+        val docs = _custom.value.mapNotNull { p ->
+            try {
+                File(dir, "${p.id}.json").readText().takeIf { it.isNotBlank() }
+            } catch (_: Exception) { null }
+        }
+        PresetBackupDoc.wrap(docs)
+    }
+
+    /**
+     * Restores custom presets from a backup document produced by
+     * [exportBackupJson] (a bare JSON array of preset objects is also
+     * accepted). Every item goes through [importPreset]'s validation, so a
+     * corrupt entry is skipped — never fatal — and restored presets always
+     * get fresh ids plus de-duplicated names, so restoring twice (or into
+     * a collection that already has them) can never collide. Returns the
+     * number of presets imported. Never throws.
+     */
+    suspend fun importBackupJson(content: String): Int = withContext(Dispatchers.IO) {
+        val docs = PresetBackupDoc.unwrap(content)
+        var count = 0
+        for (d in docs) {
+            if (importPreset(d) != null) count++
+        }
+        count
+    }
+
+    /**
      * Writes [preset] as a shareable JSON file under the FileProvider-served
      * cache "shared/" path. Returns the file, or null on any I/O failure.
      * Stale share files (>24h) are pruned so the cache dir cannot grow
