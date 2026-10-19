@@ -309,21 +309,30 @@ object RetouchEngine {
                 }
             }
             RetouchOp.SMOOTH_SKIN -> {
-                // Two-scale frequency separation (mirrors the Wavelet Skin
-                // model, so both skin tools share the same mental model):
+                // Three-band frequency separation ("plastic face" fix, mirrors
+                // the Wavelet Skin model's fine/mid/residual split, so both
+                // skin tools share the same mental model):
                 //  - tone: edge-aware bilateral smoothing at blotch scale
                 //    (sigmaS = radius/5) — evens out blotchy tone. This stage
                 //    applies at full strength, independent of textureKeep.
-                //  - detail: original minus a SMALL edge-aware smoothing
-                //    (sigmaS = radius/24; pores/grain live below this scale)
-                //    — fine detail only, no blotch-scale content, no edge
+                //  - mid: content between pore scale and blotch scale
+                //    (detailBlur - toneBlur) — the natural mid-frequency skin
+                //    texture (pore fields, soft form). This is what the old
+                //    two-band formula crushed at (1 - textureKeep), producing
+                //    the waxy "plastic face" his 11:40 on-device video caught.
+                //  - fine: original minus a SMALL edge-aware smoothing
+                //    (sigmaS = radius/24; grain lives below this scale) —
+                //    fine detail only, no blotch-scale content, no edge
                 //    halos (bilateral, not box).
-                // result = tone + detail * textureKeep, so:
-                //  - textureKeep = 1: tone evened, every pore kept — the
-                //    panel's promise. (The old single-blur formula reduced to
-                //    the original pixel at keep = 1, a silent no-op.)
-                //  - textureKeep = 0: full smoothing (bit-identical to the
-                //    old path at keep = 0).
+                // result = tone + mid * midKeep + fine * textureKeep, where
+                // midKeep = textureKeep + 0.35 * (1 - textureKeep): mid-band
+                // texture always survives longer than fine grain (blotch tone
+                // is evened out before pores die), so:
+                //  - textureKeep = 1: midKeep = 1 too, and tone + mid + fine
+                //    collapses to the original pixel — a true keep-all.
+                //  - textureKeep = 0: full smoothing of the fine grain with
+                //    35% of the mid-band texture retained — soft skin that
+                //    still reads as skin, never wax.
                 // The bilateral kernel reaches ~sigmaS*1.5 px past each output
                 // pixel, so the region is padded by 0.35*radius (>= the kernel
                 // extent, including the downsample path) — rim pixels then
@@ -340,6 +349,11 @@ object RetouchEngine {
                 // stroke remembers its own setting (default 0.45f = old
                 // hardcoded behavior).
                 val textureKeep = s.textureKeep.coerceIn(0f, 1f)
+                // Mid-band texture survives partial smoothing longer than
+                // fine grain (plastic-face fix): blotch tone is evened out
+                // before pores die. midKeep >= textureKeep always, = 1 when
+                // textureKeep = 1 (keep-all collapses to the original pixel).
+                val midKeep = textureKeep + 0.35f * (1f - textureKeep)
                 for (y in y0..y1) for (x in x0..x1) {
                     val f = falloff(x, y, cx, cy, radius, feather) * strength
                     if (f <= 0.003f) continue
@@ -349,11 +363,20 @@ object RetouchEngine {
                     val or = ((o shr 16) and 0xFF).toFloat()
                     val og = ((o shr 8) and 0xFF).toFloat()
                     val ob = (o and 0xFF).toFloat()
-                    val r = ((t shr 16) and 0xFF) +
-                        (or - ((d shr 16) and 0xFF)) * textureKeep
-                    val g = ((t shr 8) and 0xFF) +
-                        (og - ((d shr 8) and 0xFF)) * textureKeep
-                    val b = (t and 0xFF) + (ob - (d and 0xFF)) * textureKeep
+                    val tr = ((t shr 16) and 0xFF).toFloat()
+                    val tg = ((t shr 8) and 0xFF).toFloat()
+                    val tb = (t and 0xFF).toFloat()
+                    val dr = ((d shr 16) and 0xFF).toFloat()
+                    val dg = ((d shr 8) and 0xFF).toFloat()
+                    val db = (d and 0xFF).toFloat()
+                    // mid band (pore fields, soft form): detailBlur - toneBlur
+                    val mr = (dr - tr) * midKeep
+                    val mg = (dg - tg) * midKeep
+                    val mb = (db - tb) * midKeep
+                    // fine band (grain): original - detailBlur
+                    val r = tr + mr + (or - dr) * textureKeep
+                    val g = tg + mg + (og - dg) * textureKeep
+                    val b = tb + mb + (ob - db) * textureKeep
                     blendInto(out, x - ox, y - oy, ow, r, g, b, f)
                 }
             }

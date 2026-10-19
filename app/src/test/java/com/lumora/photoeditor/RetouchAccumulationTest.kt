@@ -205,4 +205,31 @@ class RetouchAccumulationTest {
         assertTrue("textureKeep=0 must still smooth the grain (err=$errSmooth)",
             errSmooth > 1f)
     }
+
+    @Test fun skinTextureKeep_one_collapsesToOriginalPixel() {
+        // Three-band model (cycle 2026-10-19): tone + mid + fine with
+        // midKeep = textureKeep + 0.35*(1-textureKeep). At textureKeep = 1,
+        // midKeep = 1 as well, so the three bands reconstruct the original
+        // pixel exactly — keep-all is a true keep-all. Locks the endpoint
+        // against the old two-band semantics (tone-evening at keep = 1).
+        val src = textured()
+        val over = RetouchEngine.compositeSpots(
+            listOf(skinSpot(1f)), w, h, src)
+        // Center pixel (48,48): brush falloff = 1, strength = 1, so the
+        // overlay alpha is opaque and the blended pixel is the spot result.
+        val i = 48 * w + 48
+        val s = src[i]
+        val o = over[i]
+        val a = ((o ushr 24) and 0xFF) / 255f
+        assertTrue("center overlay must be opaque (a=$a)", a > 0.99f)
+        val done = composite(src, over)[i]
+        val dr = abs(((done shr 16) and 0xFF) - ((s shr 16) and 0xFF))
+        val dg = abs(((done shr 8) and 0xFF) - ((s shr 8) and 0xFF))
+        val db = abs((done and 0xFF) - (s and 0xFF))
+        assertTrue(
+            "textureKeep=1 must reconstruct the original pixel " +
+                "(dr=$dr dg=$dg db=$db)",
+            dr <= 1 && dg <= 1 && db <= 1,
+        )
+    }
 }
