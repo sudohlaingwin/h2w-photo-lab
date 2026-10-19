@@ -21,7 +21,11 @@ class AppSettings(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("lumora_settings", Context.MODE_PRIVATE)
 
-    private val _previewQuality = MutableStateFlow(prefs.getInt("preview_quality", 1))
+    // Range-guarded like every sibling setting: a stray value (backup
+    // restore, old build) must never land unvalidated in the flow — the
+    // Settings selector and the GL preview path only understand 0/1.
+    private val _previewQuality = MutableStateFlow(
+        prefs.getInt("preview_quality", 1).coerceIn(0, 1))
     val previewQuality: StateFlow<Int> = _previewQuality.asStateFlow() // 0 balanced, 1 high
 
     /** Mask view mode: 0 = off, 1 = red overlay, 2 = black & white.
@@ -167,8 +171,9 @@ class AppSettings(context: Context) {
     }
 
     fun setPreviewQuality(v: Int) {
-        prefs.edit().putInt("preview_quality", v).apply()
-        _previewQuality.value = v
+        val q = v.coerceIn(0, 1)
+        prefs.edit().putInt("preview_quality", q).apply()
+        _previewQuality.value = q
     }
 
     fun setMaskViewMode(v: Int) {
