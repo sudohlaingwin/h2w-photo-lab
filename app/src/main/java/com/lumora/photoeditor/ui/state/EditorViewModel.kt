@@ -800,12 +800,15 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * stroke), the pre-gesture snapshot is pushed once via [beginGesture].
      */
     fun update(label: String? = null, gesture: Boolean = false, transform: (EditState) -> EditState) {
-        // Any committed edit invalidates the auto-operation baseline, so a
-        // later Auto/Pro-Auto tap snapshots the fresh state instead of
-        // re-applying onto a stale one (e.g. auto -> preset -> auto must not
-        // discard the preset). The auto paths re-pin their baseline right
-        // after their own update() when the state was untouched meanwhile.
-        autoBaseline = null
+        // Any committed edit ends the auto-operation session: the pre-auto
+        // baseline is gone, so a later toggle-off could never restore it.
+        // Clear the applied flags together with the baseline — leaving a flag
+        // set with no baseline produced the Stale dead-end (e.g. AI Pro
+        // Retouch -> preset -> tap again reported Stale and flipped to a
+        // re-apply instead of offering a clean fresh apply). The auto paths
+        // re-pin baseline + flag right after their own update() when the
+        // state was untouched meanwhile.
+        clearAutoBaseline()
         if (!gesture) {
             // Abandoned-gesture guard: if a previous gesture never reached
             // endGesture() (its UI was torn down mid-drag before the release
@@ -3866,11 +3869,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         update("Pro skin mask") { s ->
                             s.copy(masks = s.masks + mask)
                         }
-                        // The update() above cleared the auto baseline; the
-                        // Pro Auto toggle must still revert recipe + mask to
-                        // the exact pre-auto state, so re-pin it.
+                        // The update() above cleared the auto baseline (and the
+                        // applied flags); the Pro Auto toggle must still
+                        // revert recipe + mask to the exact pre-auto state,
+                        // so re-pin both.
                         if (repinBaseline != null && pinnedBefore == repinBaseline) {
                             autoBaseline = repinBaseline
+                            _proAutoApplied.value = true
                         }
                         requestRender()
                     }
