@@ -125,10 +125,13 @@ object RetouchEngine {
                 val cr = ((compPx[i] shr 16) and 0xFF).toFloat()
                 val cg = ((compPx[i] shr 8) and 0xFF).toFloat()
                 val cb = (compPx[i] and 0xFF).toFloat()
+                // Pack with round-to-nearest (not toInt truncation): truncation
+                // biased every blended photo pixel down by up to 1 level —
+                // same defect class as the skin-chain pack sites below.
                 compPx[i] = (0xFF shl 24) or
-                    ((cr + (sr - cr) * a).toInt().coerceIn(0, 255) shl 16) or
-                    ((cg + (sg - cg) * a).toInt().coerceIn(0, 255) shl 8) or
-                    (cb + (sb - cb) * a).toInt().coerceIn(0, 255)
+                    ((cr + (sr - cr) * a).roundToInt().coerceIn(0, 255) shl 16) or
+                    ((cg + (sg - cg) * a).roundToInt().coerceIn(0, 255) shl 8) or
+                    (cb + (sb - cb) * a).roundToInt().coerceIn(0, 255)
             }
         }
         return outPx
@@ -485,10 +488,13 @@ object RetouchEngine {
                     val nb = (bb.pow(2.2f) * g).pow(1f / 2.2f).coerceIn(0f, 1f)
                     // `out` is the bbox-sized scratch (translated index);
                     // `src` above stays full-frame.
+                    // Pack with round-to-nearest (not toInt truncation): truncation
+                    // biased every dodged/burned photo pixel down by up to 1
+                    // level — same defect class as the composite fold above.
                     out[(y - oy) * ow + (x - ox)] = (0xFF shl 24) or
-                        ((nr * 255f).toInt() shl 16) or
-                        ((ng * 255f).toInt() shl 8) or
-                        (nb * 255f).toInt()
+                        ((nr * 255f).roundToInt() shl 16) or
+                        ((ng * 255f).roundToInt() shl 8) or
+                        (nb * 255f).roundToInt()
                 }
             }
         }
@@ -748,7 +754,8 @@ object RetouchEngine {
                 r += (p shr 16) and 0xFF; g += (p shr 8) and 0xFF; b += p and 0xFF
                 n++
             }
-            out[y * dw + x] = ((r / n).toInt() shl 16) or ((g / n).toInt() shl 8) or (b / n).toInt()
+            out[y * dw + x] = (((r.toDouble() / n).roundToInt()) shl 16) or
+                (((g.toDouble() / n).roundToInt()) shl 8) or (b.toDouble() / n).roundToInt()
         }
         return out
     }
@@ -774,12 +781,18 @@ object RetouchEngine {
                 g += ((p shr 8) and 0xFF) * ws[k]
                 b += (p and 0xFF) * ws[k]
             }
-            out[y * w + x] = (r.toInt().coerceIn(0, 255) shl 16) or
-                (g.toInt().coerceIn(0, 255) shl 8) or b.toInt().coerceIn(0, 255)
+            out[y * w + x] = (r.roundToInt().coerceIn(0, 255) shl 16) or
+                (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
         }
         return out
     }
 
+    // NOTE (2026-10-18): the three pack sites in this skin-smoothing chain
+    // (downsampleBox, bilateralCore, upsampleBilinear) all use roundToInt,
+    // not toInt. Truncation biased the tone field down by up to 1 level per
+    // stage — measured -0.70 levels mean darkening inside skin-smoothing
+    // strokes on a linear ramp (rounding-harness, SMOOTH_SKIN textureKeep=0).
+    // Same round-to-nearest rationale as blendInto / LaplaceHeal.
     private fun bilateralCore(src: IntArray, w: Int, h: Int, sigmaS: Float, sigmaR: Float): IntArray {
         val out = IntArray(w * h)
         val r = max(1, (sigmaS * 1.5f).toInt()).coerceAtMost(12)
@@ -805,8 +818,8 @@ object RetouchEngine {
                 wb += (c and 0xFF) * wt
                 ws += wt
             }
-            out[y * w + x] = ((wr / ws).toInt().coerceIn(0, 255) shl 16) or
-                ((wg / ws).toInt().coerceIn(0, 255) shl 8) or (wb / ws).toInt().coerceIn(0, 255)
+            out[y * w + x] = ((wr / ws).roundToInt().coerceIn(0, 255) shl 16) or
+                ((wg / ws).roundToInt().coerceIn(0, 255) shl 8) or (wb / ws).roundToInt().coerceIn(0, 255)
         }
         return out
     }
