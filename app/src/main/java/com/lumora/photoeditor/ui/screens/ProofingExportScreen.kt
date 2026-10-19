@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -396,6 +397,13 @@ private fun SheetDone(
         runCatching {
             BitmapFactory.decodeFile(outcome.files.first().absolutePath, opts)
         }.getOrNull()
+    }
+    // The decoded preview is ours to release: remember() drops the old value
+    // without cleanup when a new outcome arrives, and on screen exit.
+    DisposableEffect(outcome.files) {
+        onDispose {
+            if (preview != null && !preview.isRecycled) preview.recycle()
+        }
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())

@@ -3779,6 +3779,20 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                 (fails.isEmpty()) to (if (fails.isEmpty()) "all watchdog gates hold"
                 else "FAIL: ${fails.joinToString("; ")}")
             }
+            // ---- check 51b: dead-readback scopes policy ----
+            // Mali glReadPixels quirk (2026-10-18): the readback feeding the
+            // scopes can fail while the preview renders fine, freezing the
+            // scopes at stale data (video bug #2: flat mini-histogram). The
+            // ViewModel declares the scopes dead after
+            // SCOPES_DEAD_AFTER_FAILURES consecutive failures and the UI
+            // shows an honest placeholder. Pin the threshold: it must be
+            // positive (a zero/negative would kill the scopes instantly) and
+            // small enough to actually fire within a session.
+            check("Dead-readback scopes policy (WatchdogPolicy)") {
+                val n = WatchdogPolicy.SCOPES_DEAD_AFTER_FAILURES
+                (n in 2..60) to
+                    "SCOPES_DEAD_AFTER_FAILURES=$n must be in 2..60"
+            }
             // ---- check 52: NDK JNI bridge smoke ----
             // Phase 0 of the approved RAW program (pro-premium-program.md):
             // proves the native .so built by externalNativeBuild/CMake is

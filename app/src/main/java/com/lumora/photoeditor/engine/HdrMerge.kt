@@ -101,6 +101,19 @@ object HdrMerge {
 
     private fun weightMap(px: IntArray, w: Int, h: Int): FloatArray {
         val out = FloatArray(w * h)
+        // Precompute luma once: the old code allocated a per-pixel lambda
+        // and re-evaluated the 0.299/0.587/0.114 mix 5x per pixel (center +
+        // 4 neighbors) — ~8M redundant channel mixes plus lambda churn on a
+        // 1280px frame, the single most expensive part of the weight pass.
+        // Same expression, same evaluation order per element, so every
+        // weight is bit-identical; only the redundant work disappears.
+        val luma = FloatArray(w * h)
+        for (i in px.indices) {
+            val c = px[i]
+            luma[i] = 0.299f * (((c shr 16) and 0xFF) / 255f) +
+                0.587f * (((c shr 8) and 0xFF) / 255f) +
+                0.114f * ((c and 0xFF) / 255f)
+        }
         val sigma2 = 2f * 0.2f * 0.2f
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -110,16 +123,12 @@ object HdrMerge {
                 val g = ((c shr 8) and 0xFF) / 255f
                 val b = (c and 0xFF) / 255f
                 // contrast: |Laplacian| of luma, reflect border
-                val luma = { xx: Int, yy: Int ->
-                    val cc = px[yy.coerceIn(0, h - 1) * w + xx.coerceIn(0, w - 1)]
-                    val rr = ((cc shr 16) and 0xFF) / 255f
-                    val gg = ((cc shr 8) and 0xFF) / 255f
-                    val bb = (cc and 0xFF) / 255f
-                    0.299f * rr + 0.587f * gg + 0.114f * bb
-                }
-                val l0 = luma(x, y)
+                val l0 = luma[i]
                 val lap = kotlin.math.abs(
-                    luma(x - 1, y) + luma(x + 1, y) + luma(x, y - 1) + luma(x, y + 1) - 4f * l0,
+                    luma[y * w + (x - 1).coerceIn(0, w - 1)] +
+                        luma[y * w + (x + 1).coerceIn(0, w - 1)] +
+                        luma[(y - 1).coerceIn(0, h - 1) * w + x] +
+                        luma[(y + 1).coerceIn(0, h - 1) * w + x] - 4f * l0,
                 )
                 val contrast = lap + 1e-6f
                 // saturation: std-dev of channels
@@ -253,21 +262,23 @@ object HdrMerge {
                 pyr.add(cur)
             } else {
                 val lap = Array(3) { FloatArray(cw * ch) }
-                for (c in 0..2) {
-                    val (nxt, nw, nh) = reduce(cur[c], cw, ch)
-                    val exp = expand(nxt, nw, nh, cw, ch)
-                    val s = cur[c]
-                    for (i in s.indices) lap[c][i] = s[i] - exp[i]
-                }
-                pyr.add(lap)
-            }
-            if (l < levels - 1) {
+                // The reduce output feeds BOTH the Laplacian detail at this
+                // level (via expand) and the next level's Gaussian base. The
+                // old code computed it twice per level per channel (once for
+                // the detail, once for the base below) — identical
+                // deterministic input, so the second pass was pure waste.
+                // One pass now; output is bit-identical, the pyramid build
+                // (the merge's dominant cost) is ~2x cheaper.
                 val nxt = Array(3) { FloatArray(0) }
                 var nw = cw; var nh = ch
                 for (c in 0..2) {
                     val (r, rw, rh) = reduce(cur[c], cw, ch)
                     nxt[c] = r; nw = rw; nh = rh
+                    val exp = expand(r, rw, rh, cw, ch)
+                    val s = cur[c]
+                    for (i in s.indices) lap[c][i] = s[i] - exp[i]
                 }
+                pyr.add(lap)
                 cur = nxt; cw = nw; ch = nh
             }
         }

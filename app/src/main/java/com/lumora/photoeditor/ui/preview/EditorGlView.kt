@@ -2190,6 +2190,11 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                     android.util.Log.w("EditorGlView",
                         "histogram readback GL error: 0x" + err.toString(16))
                 }
+                // Feed the ViewModel's readback health: enough consecutive
+                // failures declares the scopes dead for the session, and the
+                // UI swaps the frozen scopes for an honest "unavailable"
+                // placeholder (Mali quirk, 2026-10-18).
+                v.noteReadbackFailure()
                 return
             }
             lastHistGlError = GLES30.GL_NO_ERROR

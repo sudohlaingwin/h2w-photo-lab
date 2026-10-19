@@ -1504,8 +1504,13 @@ private fun PhotoCell(
             .semantics(mergeDescendants = true) {}
             .combinedClickable(
                 role = Role.Button,
-                onClickLabel = "Open photo",
-                onLongClickLabel = "Select photo",
+                // The same tap/long-press toggles selection while in
+                // selection mode — the labels must say so or TalkBack lies.
+                onClickLabel = if (selectionMode) {
+                    if (selected) "Deselect photo" else "Select photo"
+                } else "Open photo",
+                onLongClickLabel =
+                    if (selected) "Deselect photo" else "Select photo",
                 onClick = onOpen,
                 onLongClick = onLongPress,
             ),

@@ -305,6 +305,33 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     private val _histogram = MutableStateFlow(Histogram.empty())
     val histogram = _histogram.asStateFlow()
 
+    /**
+     * True while the GPU readback feeding the scopes is healthy. On the
+     * user's vivo V60 glReadPixels can fail on the default framebuffer
+     * while the preview renders fine (Mali quirk, 2026-10-18): the scopes
+     * then freeze — on first open at empty(), rendering a flat line (video
+     * bug #2). The GL thread reports failures via [noteReadbackFailure];
+     * after [WatchdogPolicy.SCOPES_DEAD_AFTER_FAILURES] consecutive
+     * failures the UI shows an honest "unavailable" placeholder instead of
+     * a misleading flat/stale scope. A later successful readback revives.
+     */
+    private val _scopesLive = MutableStateFlow(true)
+    val scopesLive = _scopesLive.asStateFlow()
+
+    /** Consecutive failed GPU readbacks; GL thread only ([onFrameBytes] /
+     *  [noteReadbackFailure]). Reset on every successful readback and on
+     *  photo open. */
+    @Volatile
+    private var readbackFailures = 0
+
+    /** Called by the GL thread when [onFrameBytes]' readback failed its GL
+     *  error check (see EditorGlView.readHistogram). */
+    fun noteReadbackFailure() {
+        if (++readbackFailures >= WatchdogPolicy.SCOPES_DEAD_AFTER_FAILURES) {
+            _scopesLive.value = false
+        }
+    }
+
     /** Live luma waveform (per-column min/max/mean), fed from the same frame bytes as the histogram. */
     private val _waveform = MutableStateFlow(Waveform.empty())
     val waveform = _waveform.asStateFlow()
@@ -532,6 +559,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     fun open(imageId: String) {
         if (_imageId.value == imageId && _preview.value != null) return
         _imageId.value = imageId
+        // Fresh photo, fresh readback health: the new photo's own
+        // readbacks decide whether the scopes are live.
+        readbackFailures = 0
+        _scopesLive.value = true
         _loading.value = true
         _error.value = null
         _errorDetail.value = null
@@ -1641,6 +1672,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * Sampling happens off the GL thread with a stride, so this stays cheap.
      */
     fun onFrameBytes(buf: java.nio.ByteBuffer, w: Int, h: Int) {
+        // A successful readback revives the scopes (see noteReadbackFailure).
+        readbackFailures = 0
+        if (!_scopesLive.value) _scopesLive.value = true
         // copy the sampled bytes; the GL thread reuses its buffer
         val stepPx = maxOf(1, (w * h) / 32768)
         val count = (w * h + stepPx - 1) / stepPx

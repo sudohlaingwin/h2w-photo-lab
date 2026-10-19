@@ -86,4 +86,81 @@ class AutoRetouchBlemishTest {
         assertTrue(BlemishDetect.detect(image(), w, h, maxSpots = 0).isEmpty())
         assertTrue(BlemishDetect.detect(IntArray(w * h), 4, 4).isEmpty())
     }
+
+    @Test fun `smooth luminance ramp yields nothing`() {
+        // A linear brightness ramp has no local deviation from its own
+        // background estimate: a box blur of a ramp is the ramp (edge
+        // replication only distorts within the 8px scan margin). Auto
+        // Retouch must never heal-stamp a smoothly shaded cheek or sky.
+        val ramp = IntArray(w * h) { i ->
+            val x = i % w; val y = i / w
+            val v = 100 + (x + y) * 100 / (2 * (w - 1))
+            (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        }
+        assertTrue(
+            "ramp misdetected as ${BlemishDetect.detect(ramp, w, h).size} blemishes",
+            BlemishDetect.detect(ramp, w, h).isEmpty())
+    }
+
+    @Test fun `spot fully outside the scan margin is ignored`() {
+        // The scan grid starts at 8px from the edge (the background blur's
+        // radius). A 2.5px spot centered at x=2 never touches a scan point,
+        // so it must not be reported.
+        val found = BlemishDetect.detect(
+            image(spots = listOf(Triple(2f / w, 0.5f, 125)), spotR = 2.5f), w, h)
+        assertTrue("edge spot should be ignored, got $found", found.isEmpty())
+    }
+
+    @Test fun `elongated blob is tiled by separated spots, never stacked`() {
+        // Two overlapping discs form one 14px-wide dumbbell blob. The NMS
+        // keeps accepted spots at least MIN_SEPARATION_PX (12px) apart, so
+        // the blob gets tiled by non-overlapping heal stamps instead of a
+        // stack of overlapping ones on the same pixels — the exact
+        // budget-eating bug the flat-blob test guards against.
+        val found = BlemishDetect.detect(
+            image(spots = listOf(
+                Triple(0.5f, 0.5f, 125),
+                Triple(0.55f, 0.5f, 125),
+            ), spotR = 4f),
+            w, h, maxSpots = 20,
+        )
+        assertEquals("dumbbell tiling changed: $found", 2, found.size)
+        for (a in found) for (b in found) {
+            if (a === b) continue
+            val dx = (a.x - b.x) * w
+            val dy = (a.y - b.y) * h
+            val dist = sqrt(dx * dx + dy * dy)
+            assertTrue("accepted spots overlap (dist=$dist < 12px)", dist >= 12f - 1e-3f)
+        }
+    }
+
+    @Test fun `maxSpots caps the result`() {
+        val spots = (0 until 4).flatMap { cx ->
+            (0 until 5).map { cy ->
+                Triple((cx + 0.5f) / 4, (cy + 0.5f) / 5, 125)
+            }
+        }
+        val found = BlemishDetect.detect(image(spots = spots, spotR = 4f), w, h, maxSpots = 8)
+        assertEquals("expected exactly 8 spots, got ${found.size}", 8, found.size)
+    }
+
+    @Test fun `sensitivity is monotonic in thresholdScale`() {
+        // thresholdScale is RetouchIntel's adaptive strictness knob: a lower
+        // scale must never detect fewer spots than a higher one. Nominal
+        // diffs 14 / 25 / 45 in both polarities span the default 12..60 band
+        // so at least one strength flips across scales.
+        val spots = listOf(14, 25, 45).flatMap { d ->
+            listOf(
+                Triple(0.25f * (d / 14f), 0.3f, 170 - d),
+                Triple(0.25f * (d / 14f), 0.7f, 170 + d),
+            )
+        }
+        val imageSpots = image(spots = spots, spotR = 6f)
+        val lax = BlemishDetect.detect(imageSpots, w, h, thresholdScale = 0.5f)
+        val normal = BlemishDetect.detect(imageSpots, w, h, thresholdScale = 1f)
+        val strict = BlemishDetect.detect(imageSpots, w, h, thresholdScale = 2.5f)
+        assertTrue("lax(${lax.size}) < normal(${normal.size})", lax.size >= normal.size)
+        assertTrue("normal(${normal.size}) < strict(${strict.size})", normal.size >= strict.size)
+        assertTrue("scale had no effect: $lax", lax.size > strict.size)
+    }
 }

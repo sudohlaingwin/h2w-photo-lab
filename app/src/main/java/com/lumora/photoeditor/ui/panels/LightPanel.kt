@@ -20,6 +20,7 @@ import com.lumora.photoeditor.engine.ImageMath
 import com.lumora.photoeditor.engine.LightParams
 import com.lumora.photoeditor.engine.ToneCurve
 import com.lumora.photoeditor.ui.components.HistogramView
+import com.lumora.photoeditor.ui.components.ScopesUnavailable
 import com.lumora.photoeditor.ui.components.RgbParadeView
 import com.lumora.photoeditor.ui.components.VectorscopeView
 import com.lumora.photoeditor.ui.components.WaveformView
@@ -65,6 +66,7 @@ fun LightPanel(
     val waveform by vm.waveform.collectAsState()
     val vectorscope by vm.vectorscope.collectAsState()
     val rgbParade by vm.rgbParade.collectAsState()
+    val scopesLive by vm.scopesLive.collectAsState()
     val l = state.light
     var scopeMode by remember { mutableStateOf(0) } // 0 = histogram, 1 = waveform, 2 = vectorscope, 3 = RGB parade
 
@@ -261,7 +263,12 @@ fun LightPanel(
             onSelect = { scopeMode = it },
             modifier = Modifier.padding(horizontal = 16.dp),
         )
-        when (scopeMode) {
+        // Mali readback quirk (2026-10-18): when the GPU readback feeding the
+        // scopes is dead, a frozen or flat scope reads as real data — worse
+        // than none. Show an honest placeholder instead.
+        if (!scopesLive) {
+            ScopesUnavailable(modifier = Modifier.padding(horizontal = 16.dp))
+        } else when (scopeMode) {
             0 -> HistogramView(histogram, modifier = Modifier.padding(horizontal = 16.dp))
             1 -> WaveformView(waveform, modifier = Modifier.padding(horizontal = 16.dp))
             2 -> VectorscopeView(vectorscope, modifier = Modifier.padding(horizontal = 16.dp))

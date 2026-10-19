@@ -1,9 +1,12 @@
 package com.lumora.photoeditor.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -11,8 +14,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lumora.photoeditor.ui.state.Histogram
 import com.lumora.photoeditor.engine.SKIN_TONE_U
 import com.lumora.photoeditor.engine.SKIN_TONE_V
@@ -339,6 +344,38 @@ fun RgbParadeView(
             colors.divider.copy(alpha = 0.35f),
             Offset(0f, h), Offset(w, h),
             strokeWidth = 1.dp.toPx(),
+        )
+    }
+}
+
+/**
+ * Honest placeholder shown instead of a scope when the GPU readback feeding
+ * it is dead (Mali glReadPixels quirk, 2026-10-18 — see
+ * [WatchdogPolicy.SCOPES_DEAD_AFTER_FAILURES]). A frozen or flat scope is
+ * worse than none: it reads as real data. Same footprint as the scope it
+ * replaces so the layout doesn't jump.
+ */
+@Composable
+fun ScopesUnavailable(
+    modifier: Modifier = Modifier,
+    height: Dp = 72.dp,
+) {
+    val colors = Lumora.colors
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .semantics {
+                contentDescription = "Scopes unavailable on this device"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(
+            "Scopes unavailable on this device",
+            style = TextStyle(
+                color = colors.textSecondary,
+                fontSize = 12.sp,
+            ),
         )
     }
 }

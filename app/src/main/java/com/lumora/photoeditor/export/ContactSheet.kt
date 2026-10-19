@@ -182,6 +182,12 @@ suspend fun buildContactSheets(
     val standIn = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
     var rendered = 0
     var failed = 0
+    // Page files written so far, tracked outside the try so the catch can
+    // clean them up: a failure or cancellation part-way through composing
+    // must delete them, or a 480-photo sheet leaves several large JPEGs
+    // orphaned in cacheDir. Renamed finals stay caller-owned (share/save
+    // intents) and are NOT deleted here.
+    val written = mutableListOf<File>()
     try {
         val cells = ids.mapIndexed { i, id ->
             if (shouldCancel()) throw CancellationException()
@@ -197,7 +203,8 @@ suspend fun buildContactSheets(
         val pages = contactSheetPages(ids.size, columns)
         val dateText = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
             .format(Date())
-        val files = cells.chunked(PHOTOS_PER_SHEET_PAGE).mapIndexed { pageIdx, pageCells ->
+        // Page files are tracked in `written` (declared above the try).
+        cells.chunked(PHOTOS_PER_SHEET_PAGE).forEach { pageCells ->
             if (shouldCancel()) throw CancellationException()
             val layout = contactSheetLayout(pageCells.size, columns)
             val bmp = composeContactSheetPage(
@@ -205,7 +212,7 @@ suspend fun buildContactSheets(
                 galleryName = gallery.name,
                 clientName = gallery.clientName,
                 metaLine = "$dateText · ${gallery.summary}",
-                pageLine = if (pages > 1) "Page ${pageIdx + 1} of $pages" else null,
+                pageLine = if (pages > 1) "Page ${written.size + 1} of $pages" else null,
             )
             try {
                 val file = File(container.context.cacheDir,
@@ -214,7 +221,7 @@ suspend fun buildContactSheets(
                     if (!bmp.compress(Bitmap.CompressFormat.JPEG, 88, out))
                         throw IllegalStateException("Could not write the contact sheet")
                 }
-                file
+                written += file
             } finally {
                 bmp.recycle()
                 // This page's cell renders are done the moment the page is
@@ -229,7 +236,7 @@ suspend fun buildContactSheets(
             }
         }
         // Name the files last: a crash mid-compose leaves no half-named files.
-        val finalFiles = files.mapIndexed { pageIdx, file ->
+        val finalFiles = written.mapIndexed { pageIdx, file ->
             val target = File(file.parent,
                 contactSheetFileName(gallery.name, pageIdx + 1, pages) + ".jpg")
             // renameTo can fail (e.g. a stale file with the same name);
@@ -240,6 +247,10 @@ suspend fun buildContactSheets(
         }
         Result.success(ContactSheetOutcome(finalFiles, pages, rendered, failed))
     } catch (t: Throwable) {
+        // Delete any page files composed before the failure/cancel so they
+        // don't accumulate in cacheDir. Successful outcomes keep theirs:
+        // they are returned in ContactSheetOutcome and stay caller-owned.
+        written.forEach { runCatching { it.delete() } }
         if (t is CancellationException) throw t
         val msg = if (t is OutOfMemoryError)
             "Not enough memory to build the contact sheet — try fewer columns or close other apps"

@@ -81,4 +81,18 @@ object WatchdogPolicy {
             "source ${(sourceLuma * 100).toInt()}%; ev=$exposureEv; " +
             "aiGrade=$aiEnabled@${"%.2f".format(aiStrength)}; " +
             "overlay=$overlayIdx; maskView=$maskView"
+
+    /**
+     * Consecutive failed GPU readbacks after which the scopes are declared
+     * dead for the session (Mali glReadPixels quirk, 2026-10-18): on the
+     * user's vivo V60 the readback fails while the preview itself renders
+     * fine, so the histogram/waveform/vectorscope/RGB parade freeze — on
+     * first open they sit at empty() and the mini-histogram renders a flat
+     * line (video bug #2). Past this many failures the UI shows an honest
+     * "unavailable" placeholder instead of a misleading flat/stale scope.
+     * A later successful readback revives them. ~450ms between readbacks,
+     * so 6 ≈ 2.7s: quick enough to matter, long enough to ride out a
+     * transient hiccup.
+     */
+    const val SCOPES_DEAD_AFTER_FAILURES = 6
 }

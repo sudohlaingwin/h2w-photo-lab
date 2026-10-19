@@ -46,6 +46,7 @@ import com.lumora.photoeditor.ui.components.LumoraTextField
 import com.lumora.photoeditor.ui.components.LumoraDialog
 import com.lumora.photoeditor.ui.components.LumoraOutlineButton
 import com.lumora.photoeditor.ui.components.HistogramView
+import com.lumora.photoeditor.ui.components.ScopesUnavailable
 import com.lumora.photoeditor.ui.components.LoadingState
 import com.lumora.photoeditor.ui.components.LumoraCompactSlider
 import com.lumora.photoeditor.ui.components.ToolbarButton
@@ -125,6 +126,7 @@ fun EditorScreen(
     val cropOverlayStyle by vm.cropOverlayStyle.collectAsState()
     val rating by vm.rating.collectAsState()
     val histogram by vm.histogram.collectAsState()
+    val scopesLive by vm.scopesLive.collectAsState()
     // RAW program Phase 1 slice 3: when the open photo is a lossy-JPEG DNG
     // served from the camera's embedded preview, the editor says so — the
     // caption sits right under the histogram strip (see below).
@@ -376,13 +378,18 @@ fun EditorScreen(
                     )
                     .semantics {
                         contentDescription =
-                            "Live RGB histogram of the edited photo. " +
-                                "Activate to open Light adjustments."
+                            if (scopesLive)
+                                "Live RGB histogram of the edited photo. " +
+                                    "Activate to open Light adjustments."
+                            else
+                                "Scopes unavailable on this device. " +
+                                    "Activate to open Light adjustments."
                     }
                     .padding(horizontal = 20.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                HistogramView(histogram, height = 36.dp)
+                if (scopesLive) HistogramView(histogram, height = 36.dp)
+                else ScopesUnavailable(height = 36.dp)
             }
             HorizontalDivider(color = colors.divider, thickness = 0.5.dp)
         }
