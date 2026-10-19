@@ -394,4 +394,102 @@ class ShaderSafetyTest {
         """.trimIndent()
         assertTrue(ShaderSafety.audit(listOf("RESOK" to src)).isEmpty())
     }
+
+    @Test fun varying_precision_mismatch_is_flagged() {
+        // Rule (i): a bare `out ivec2 vTile;` is highp (vertex int
+        // default) while the matching `in ivec2 vTile;` is mediump
+        // (fragment int default) — a link-time error per the ES 3.00 spec
+        // that lenient drivers accept and strict (Mali) drivers reject.
+        val vert = """
+            #version 300 es
+            out ivec2 vTile;
+            void main() {
+                vTile = ivec2(1, 2);
+                gl_Position = vec4(0.0);
+            }
+        """.trimIndent()
+        val frag = """
+            #version 300 es
+            precision highp float;
+            in ivec2 vTile;
+            out vec4 fragColor;
+            void main() {
+                fragColor = vec4(float(vTile.x));
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(
+            listOf("MISMATCH_VERTEX" to vert, "MISMATCH_FRAGMENT" to frag))
+        assertEquals(1, issues.size)
+        assertEquals("varying-precision-mismatch", issues[0].rule)
+        assertEquals("MISMATCH_FRAGMENT", issues[0].shaderName)
+        assertTrue(issues[0].line.contains("vTile"))
+    }
+
+    @Test fun matching_explicit_varying_precision_passes() {
+        // Same qualifier on both sides: no mismatch, even for int-family
+        // varyings where the stage defaults would disagree.
+        val vert = """
+            #version 300 es
+            out mediump ivec2 vTile;
+            out highp vec2 vUv;
+            void main() {
+                vTile = ivec2(1, 2);
+                vUv = vec2(0.5);
+                gl_Position = vec4(0.0);
+            }
+        """.trimIndent()
+        val frag = """
+            #version 300 es
+            precision highp float;
+            in mediump ivec2 vTile;
+            in highp vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                fragColor = vec4(vUv, float(vTile.x), 1.0);
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(
+            listOf("MATCHOK_VERTEX" to vert, "MATCHOK_FRAGMENT" to frag)).isEmpty())
+    }
+
+    @Test fun explicit_vertex_precision_matching_fragment_default_passes() {
+        // `out highp vec2 vUv;` against a bare `in vec2 vUv;`: the fragment
+        // float default is highp, so the effective precisions agree.
+        val vert = """
+            #version 300 es
+            out highp vec2 vUv;
+            void main() {
+                vUv = vec2(0.5);
+                gl_Position = vec4(0.0);
+            }
+        """.trimIndent()
+        val frag = """
+            #version 300 es
+            precision highp float;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                fragColor = vec4(vUv, 0.0, 1.0);
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(
+            listOf("DEFOK_VERTEX" to vert, "DEFOK_FRAGMENT" to frag)).isEmpty())
+    }
+
+    @Test fun unpaired_varying_sources_are_ignored() {
+        // Rule (i) only fires on a VERTEX/FRAGMENT pair present in the same
+        // audit call: a lone source's `in`/`out` declarations are not
+        // cross-checked against anything.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp sampler2D uImage;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                fragColor = texture(uImage, vUv);
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("LONE" to src)).isEmpty())
+    }
 }

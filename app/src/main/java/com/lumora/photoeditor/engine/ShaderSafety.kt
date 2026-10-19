@@ -47,7 +47,18 @@ package com.lumora.photoeditor.engine
  * same lenient/strict split behind rules (c) and (g). The shipped shaders
  * use none, so this is future-proofing: a habitual `float sample;` can
  * never ship silently.
- * This audit scans every shipped shader for all eight patterns so a
+ * Rule (i) closes the cross-stage gap: a vertex `out` varying and its
+ * fragment `in` counterpart must agree on effective precision (explicit
+ * qualifier, or the stage default when unqualified). The ES 3.00 spec
+ * makes a precision mismatch a link-time error, but the two stages
+ * predeclare DIFFERENT int defaults — vertex `precision highp int;`
+ * versus fragment `precision mediump int;` — so a bare `out ivec2 v;` /
+ * `in ivec2 v;` pair links fine nowhere strict yet compiles on every
+ * lenient driver, then the program fails to link on strict (Mali) drivers
+ * and the preview goes black. The shipped pairs (`vUv`, `vNdc`) are all
+ * float-family, where both stages default to highp, so this is
+ * future-proofing: the next `ivec2` varying can never ship half-qualified.
+ * This audit scans every shipped shader for all nine patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
  * tests.
@@ -185,6 +196,73 @@ object ShaderSafety {
             """\s+\b(${reservedWords.joinToString("|")})\b"""
     )
 
+    /**
+     * Rule (i): a cross-stage varying declaration — `out <prec?> <type>
+     * <name>;` in a vertex shader, `in <prec?> <type> <name>;` in its
+     * fragment shader. Anchored to the line start so `layout(location = 0)
+     * in vec2 aPos;` (a vertex attribute, not a varying) never matches;
+     * samplers cannot be varyings, so no sampler types are listed.
+     */
+    private val varyingDecl =
+        Regex("""^\s*(in|out)\s+(?:(lowp|mediump|highp)\s+)?""" +
+            """(float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|""" +
+            """uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*;""")
+
+    /** One parsed varying declaration (group order follows [varyingDecl]). */
+    private data class VaryingDecl(
+        val name: String,
+        val type: String,
+        val precision: String?,
+        val lineNumber: Int,
+        val line: String,
+    )
+
+    /**
+     * Rule (i): the stage default precision for a varying type when the
+     * declaration carries no explicit qualifier. GLSL ES 3.00 predeclares
+     * `precision highp float; precision highp int;` in the vertex language
+     * but `precision highp float; precision mediump int;` in the fragment
+     * language — so a bare `out ivec2 v;` / `in ivec2 v;` pair is highp on
+     * the vertex side and mediump on the fragment side (`uint` follows
+     * `int`). `bool` has no predeclared default in either stage: a bare
+     * bool varying is an error on every driver, not a lenient/strict
+     * split, so it resolves highp/highp here and can never mismatch.
+     */
+    private fun defaultVaryingPrecision(isVertex: Boolean, type: String): String {
+        val intFamily = type == "int" || type == "uint" ||
+            type.startsWith("i") || type.startsWith("u")
+        return if (intFamily) {
+            if (isVertex) "highp" else "mediump"
+        } else {
+            "highp"
+        }
+    }
+
+    /**
+     * Rule (i): `out` varyings of one source, keyed by name. GLSL built-ins
+     * (`gl_Position`, …) are skipped — they have no cross-stage
+     * declaration to match.
+     */
+    private fun parseVaryings(code: String, qualifier: String): Map<String, VaryingDecl> {
+        val varyings = mutableMapOf<String, VaryingDecl>()
+        code.lines().forEachIndexed { idx, rawLine ->
+            val line = stripLineComment(rawLine).trim()
+            if (line.isEmpty()) return@forEachIndexed
+            val m = varyingDecl.matchEntire(line) ?: return@forEachIndexed
+            if (m.groupValues[1] != qualifier) return@forEachIndexed
+            val name = m.groupValues[4]
+            if (name.startsWith("gl_")) return@forEachIndexed
+            varyings[name] = VaryingDecl(
+                name = name,
+                type = m.groupValues[3],
+                precision = m.groupValues[2].ifEmpty { null },
+                lineNumber = idx + 1,
+                line = line,
+            )
+        }
+        return varyings
+    }
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -220,7 +298,12 @@ object ShaderSafety {
      *    shipped shaders index every array with constants only, and
      *  - any GLSL-ES-3.00-reserved word (`sample`, `input`, `filter`, …)
      *    used as a variable or function name — strict Mali drivers reject
-     *    the program while lenient drivers accept it.
+     *    the program while lenient drivers accept it, and
+     *  - any vertex `out` varying whose effective precision disagrees with
+     *    its fragment `in` counterpart — a link-time error per the ES 3.00
+     *    spec that lenient drivers accept and strict (Mali) drivers
+     *    reject; the int-family stage defaults differ (vertex highp vs
+     *    fragment mediump), so even fully unqualified pairs can mismatch.
      */
     fun audit(sources: List<Pair<String, String>>): List<ShaderSafetyIssue> {
         val issues = mutableListOf<ShaderSafetyIssue>()
@@ -349,6 +432,35 @@ object ShaderSafety {
                     issues += ShaderSafetyIssue(name, lineNumber,
                         "dynamic-while-condition",
                         "non-constant while condition in: while (${cond.trim()})")
+                }
+            }
+        }
+        // Pass 5 (rule i): every vertex `out` varying must agree on
+        // effective precision with its fragment `in` counterpart. Sources
+        // pair by name stem: VERTEX↔FRAGMENT, BLUR_VERTEX↔BLUR_FRAGMENT.
+        // A mismatch is a link-time error per the ES 3.00 spec — lenient
+        // drivers accept it, strict (Mali) drivers reject the program, and
+        // for the preview shaders that means a black screen. A vertex `out`
+        // with no fragment `in` is an unused varying, not an error, and is
+        // left alone.
+        val codeByName = sources.associate { (n, s) -> n to stripBlockComments(s) }
+        for ((vertName, vertCode) in codeByName) {
+            if (!vertName.endsWith("VERTEX")) continue
+            val fragName = vertName.dropLast("VERTEX".length) + "FRAGMENT"
+            val fragCode = codeByName[fragName] ?: continue
+            val fragIns = parseVaryings(fragCode, "in")
+            for ((vName, vDecl) in parseVaryings(vertCode, "out")) {
+                val fDecl = fragIns[vName] ?: continue
+                val vPrec = vDecl.precision
+                    ?: defaultVaryingPrecision(isVertex = true, vDecl.type)
+                val fPrec = fDecl.precision
+                    ?: defaultVaryingPrecision(isVertex = false, fDecl.type)
+                if (vPrec != fPrec) {
+                    issues += ShaderSafetyIssue(fragName, fDecl.lineNumber,
+                        "varying-precision-mismatch",
+                        "varying '$vName' is $vPrec in $vertName but $fPrec " +
+                            "in $fragName (link-time error on strict " +
+                            "drivers): ${fDecl.line}")
                 }
             }
         }
