@@ -193,7 +193,8 @@ class AppSettings(context: Context) {
     private fun migrateOverlayAlpha(stored: Float): Float {
         // -1 = never set; exactly 0.55 = the pre-2026-10-18 default, never
         // touched by the user (we only ever wrote the slider value verbatim).
-        val migrated = if (stored < 0f || stored == 0.55f) 0.35f else stored
+        // The pure decision lives in MaskOverlayMigration.kt (harness-tested).
+        val migrated = migrateMaskOverlayAlpha(stored)
         if (migrated != stored) prefs.edit().putFloat("mask_overlay_alpha", migrated).apply()
         return migrated
     }
