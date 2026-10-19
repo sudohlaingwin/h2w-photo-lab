@@ -343,4 +343,55 @@ class ShaderSafetyTest {
         """.trimIndent()
         assertTrue(ShaderSafety.audit(listOf("COMMENTS" to src)).isEmpty())
     }
+
+    @Test fun reserved_word_as_variable_is_flagged() {
+        // Rule (h): `sample` is reserved for future use in GLSL ES 3.00 —
+        // lenient drivers accept it as an identifier, strict (Mali) drivers
+        // reject the program.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp sampler2D uImage;
+            float sample;
+            void main() {
+                sample = texture(uImage, vec2(0.5)).r;
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("RESVAR" to src))
+        assertEquals(1, issues.size)
+        assertEquals("reserved-identifier", issues[0].rule)
+        assertTrue(issues[0].line.contains("sample"))
+    }
+
+    @Test fun reserved_word_as_function_name_and_param_is_flagged() {
+        // Both the function name (`filter`) and the parameter (`output`)
+        // sit in identifier position and must be caught.
+        val src = """
+            #version 300 es
+            precision highp float;
+            float filter(float output) { return output; }
+            void main() { }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("RESFN" to src))
+        assertEquals(1, issues.size)
+        assertEquals("reserved-identifier", issues[0].rule)
+    }
+
+    @Test fun identifiers_containing_reserved_words_pass() {
+        // The \\b boundaries must not over-match: `sampleCount` and
+        // `resampled` merely contain a reserved word.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp sampler2D uImage;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main() {
+                float sampleCount = 4.0;
+                float resampled = texture(uImage, vUv).r * sampleCount;
+                fragColor = vec4(resampled);
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("RESOK" to src)).isEmpty())
+    }
 }

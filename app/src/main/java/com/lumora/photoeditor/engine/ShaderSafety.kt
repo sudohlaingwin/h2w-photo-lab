@@ -39,7 +39,15 @@ package com.lumora.photoeditor.engine
  * drivers reject the whole program, which for the preview shaders means a
  * black screen. Scoped to ES 3.00 sources only, like rule (c): ES 1.00
  * shaders legitimately use all of these.
- * This audit scans every shipped shader for all seven patterns so a
+ * Rule (h) closes the last identifier-level hazard: words the GLSL ES 3.00
+ * spec reserves for future use (`sample`, `input`, `output`, `filter`,
+ * `partition`, `coherent`, `volatile`, `restrict`, `readonly`, `writeonly`,
+ * `resource`, …) used as variable or function names. Lenient drivers accept
+ * them as identifiers, strict (Mali) drivers reject the whole program — the
+ * same lenient/strict split behind rules (c) and (g). The shipped shaders
+ * use none, so this is future-proofing: a habitual `float sample;` can
+ * never ship silently.
+ * This audit scans every shipped shader for all eight patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
  * tests.
@@ -144,6 +152,39 @@ object ShaderSafety {
         Regex("""\battribute\b"""),
     )
 
+    /**
+     * Words the GLSL ES 3.00 spec (§3.6) reserves for future use. Current
+     * keywords (`if`, `for`, `struct`, …) need no rule — every compiler
+     * rejects them as identifiers. These do not: lenient drivers accept
+     * `float sample;` while strict (Mali) drivers reject the program, the
+     * same lenient/strict split behind rules (c) and (g). `attribute` and
+     * `varying` are also spec-reserved in ES 3.00 but rule (g) already owns
+     * them there, so they are excluded here to keep one issue per cause.
+     */
+    private val reservedWords = listOf(
+        "sample", "input", "output", "filter", "partition",
+        "coherent", "volatile", "restrict", "readonly", "writeonly",
+        "resource", "common", "cast", "class", "union", "enum",
+        "template", "namespace", "using", "sizeof", "goto",
+        "inline", "noinline", "public", "long", "short", "extern",
+        "half", "fixed", "superp", "active", "asm",
+    )
+
+    /**
+     * A reserved word in identifier position: immediately after a type
+     * (with an optional precision qualifier and an optional storage
+     * qualifier before it), or after `void` for a function name.
+     * Matches `float sample;`, `uniform highp vec3 input;`,
+     * `float filter(float x)`, and `void f(float output)` alike. The
+     * `\\b` boundaries keep `sampleCount` and `resampled` from matching.
+     */
+    private val reservedIdentifier = Regex(
+        """(?:^|[;{}()\s,])\s*(?:uniform|in|out|inout|const)?\s*""" +
+            """(?:lowp|mediump|highp)?\s*(?:float|int|uint|bool|vec2|vec3|vec4|""" +
+            """ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4|sampler\w+|void)""" +
+            """\s+\b(${reservedWords.joinToString("|")})\b"""
+    )
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -176,7 +217,10 @@ object ShaderSafety {
      *    `centers[i]` HSL/B&W mixer loops shipped exactly this until
      *    2026-10-19; several Mali drivers miscompile dynamic array indexing
      *    in fragment shaders even when the loop bound is constant, so the
-     *    shipped shaders index every array with constants only.
+     *    shipped shaders index every array with constants only, and
+     *  - any GLSL-ES-3.00-reserved word (`sample`, `input`, `filter`, …)
+     *    used as a variable or function name — strict Mali drivers reject
+     *    the program while lenient drivers accept it.
      */
     fun audit(sources: List<Pair<String, String>>): List<ShaderSafetyIssue> {
         val issues = mutableListOf<ShaderSafetyIssue>()
@@ -230,6 +274,13 @@ object ShaderSafety {
                             break
                         }
                     }
+                }
+                // Rule (h): a reserved word in identifier position is a
+                // strict-driver compile error (lenient drivers accept it).
+                // One issue per line is enough — the line names the word.
+                if (reservedIdentifier.containsMatchIn(line)) {
+                    issues += ShaderSafetyIssue(name, idx + 1,
+                        "reserved-identifier", line)
                 }
                 for (sampler in samplers.keys) {
                     val use = Regex(Regex.escape(sampler) + """\s*\[\s*([^\]]*)\]""")
