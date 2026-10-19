@@ -65,7 +65,7 @@ class SnapshotStore(context: Context) {
      */
     suspend fun take(imageId: String, name: String, state: EditState): EditSnapshot? =
         withContext(Dispatchers.IO) {
-            val clean = name.trim().ifEmpty { return@withContext null }
+            val clean = cleanSnapshotName(name) ?: return@withContext null
             val snap = EditSnapshot(
                 id = UUID.randomUUID().toString(),
                 name = clean,
@@ -75,7 +75,7 @@ class SnapshotStore(context: Context) {
             val dir = dirFor(imageId)
             try {
                 File(dir, "${snap.id}.json").writeText(json.encodeToString(snap))
-                readAll(dir).drop(MAX_PER_PHOTO).forEach { old ->
+                readAll(dir).snapshotsToEvict().forEach { old ->
                     File(dir, "${old.id}.json").delete()
                 }
             } catch (_: Exception) {
@@ -93,7 +93,7 @@ class SnapshotStore(context: Context) {
     /** No-op on blank names or missing files. */
     suspend fun rename(imageId: String, snapshotId: String, name: String) =
         withContext(Dispatchers.IO) {
-            val clean = name.trim().ifEmpty { return@withContext }
+            val clean = cleanSnapshotName(name) ?: return@withContext
             val f = File(dirFor(imageId), "$snapshotId.json")
             val cur = try { json.decodeFromString<EditSnapshot>(f.readText()) }
             catch (_: Exception) { null } ?: return@withContext
@@ -118,3 +118,27 @@ class SnapshotStore(context: Context) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pure snapshot policy — first-ever executed verification 2026-10-20
+// (SnapshotStoreTest). [take] and [rename] call these helpers; keeping them
+// top-level and pure (no Context, no files, no coroutines) lets the exact
+// shipped logic run under the standalone JUnit harness.
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot-name gate shared by [take] and [rename]: trims the name and
+ * rejects blank ones (null) so no unnamed snapshot can ever be written.
+ */
+internal fun cleanSnapshotName(name: String): String? =
+    name.trim().ifEmpty { null }
+
+/**
+ * Eviction policy for the per-photo [SnapshotStore.MAX_PER_PHOTO] cap.
+ * Given snapshots sorted newest-first (see [readAll]), returns exactly the
+ * entries to delete so the cap holds: everything past the newest
+ * [SnapshotStore.MAX_PER_PHOTO]. A just-taken snapshot has the newest
+ * timestamp, so it is never evicted — only the oldest beyond the cap go.
+ */
+internal fun List<EditSnapshot>.snapshotsToEvict(): List<EditSnapshot> =
+    drop(SnapshotStore.MAX_PER_PHOTO)
