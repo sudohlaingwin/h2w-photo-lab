@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.lumora.photoeditor.engine.CropParams
 import com.lumora.photoeditor.engine.GeometryParams
+import com.lumora.photoeditor.engine.applyAspect
 import com.lumora.photoeditor.core.AppSettings
 import com.lumora.photoeditor.ui.components.LumoraChip
 import com.lumora.photoeditor.ui.components.LumoraIconButton
@@ -438,21 +439,4 @@ private fun RowScope.Rotate90Button(label: String, onClick: () -> Unit) {
     }
 }
 
-/** Applies an aspect ratio to the crop rect, centered. */
-fun applyAspect(crop: CropParams, aspect: Float?): CropParams {
-    if (aspect == null) return crop.copy(aspect = null)
-    val cw = crop.right - crop.left
-    val ch = crop.bottom - crop.top
-    val cx = (crop.left + crop.right) / 2f
-    val cy = (crop.top + crop.bottom) / 2f
-    // fit the largest centered rect of [aspect] inside current crop
-    var w = cw; var h = w / aspect
-    if (h > ch) { h = ch; w = h * aspect }
-    return crop.copy(
-        left = (cx - w / 2).coerceIn(0f, 1f),
-        right = (cx + w / 2).coerceIn(0f, 1f),
-        top = (cy - h / 2).coerceIn(0f, 1f),
-        bottom = (cy + h / 2).coerceIn(0f, 1f),
-        aspect = aspect,
-    )
-}
+

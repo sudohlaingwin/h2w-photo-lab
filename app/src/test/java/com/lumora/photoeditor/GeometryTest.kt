@@ -4,7 +4,7 @@ import com.lumora.photoeditor.engine.CropParams
 import com.lumora.photoeditor.engine.Geometry
 import com.lumora.photoeditor.engine.GeometryParams
 import com.lumora.photoeditor.engine.Pt
-import com.lumora.photoeditor.ui.panels.applyAspect
+import com.lumora.photoeditor.engine.applyAspect
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.math.abs
