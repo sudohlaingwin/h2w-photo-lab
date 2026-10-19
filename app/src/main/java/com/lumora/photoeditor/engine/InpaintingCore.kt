@@ -22,6 +22,11 @@ import kotlin.random.Random
  * Quality notes: matching compares only target pixels that are already
  * known (masked pixels are excluded), and source patches must lie fully in
  * the known region, so filled content always comes from real pixels.
+ * "Already known" is tracked with a dynamic mask that clears as the
+ * boundary-inward fill front advances: without it, pixels deeper than
+ * PATCH_RADIUS from the known region would see their whole comparison
+ * patch as unknown, match nothing, and keep their original color —
+ * the removed object would stay visible in the middle of large removals.
  */
 object InpaintingCore {
 
@@ -273,6 +278,16 @@ object InpaintingCore {
         val order = dilated.indices.filter { dilated[it] }.sortedBy { dist[it] }
         if (order.isEmpty()) return pixels.copyOf()
 
+        // Dynamic unknown-mask for the TARGET side of patch comparisons.
+        // Starts as the static dilated mask and clears each pixel as the
+        // boundary-inward fill front reaches it, so deep pixels compare
+        // against already-filled neighbours instead of finding their whole
+        // patch "unknown" (score MAX_VALUE) forever. The SOURCE gate
+        // (isPatchKnown) intentionally keeps the static `dilated` mask:
+        // filled content must always come from real original pixels, never
+        // from other filled pixels.
+        val targetUnknown = dilated.copyOf()
+
         val result = pixels.copyOf()
         // Nearest-neighbour field: best source patch center per filled pixel.
         val nnfX = IntArray(n) { -1 }
@@ -293,7 +308,7 @@ object InpaintingCore {
                 val ry = (py + (rnd.nextFloat() - 0.5f) * h * 0.6f)
                     .toInt().coerceIn(PATCH_RADIUS, h - 1 - PATCH_RADIUS)
                 if (isPatchKnown(rx, ry, w, h, PATCH_RADIUS, dilated)) {
-                    val score = patchDistance(px, py, rx, ry, w, h, result, dilated)
+                    val score = patchDistance(px, py, rx, ry, w, h, result, targetUnknown)
                     if (score < bestScore) {
                         bestScore = score; bestX = rx; bestY = ry
                     }
@@ -303,8 +318,15 @@ object InpaintingCore {
                 nnfX[p] = bestX; nnfY[p] = bestY
                 result[p] = result[bestY * w + bestX]
             } else {
+                // No valid source patch: keep the static `dilated` mask
+                // here on purpose. With the dynamic mask this fallback
+                // would smear already-processed originals across a region
+                // that has no real source content at all; the pinned
+                // contract is a graceful no-op copy in that case.
                 result[p] = averageKnownNeighbors(p, w, h, result, dilated)
             }
+            // p is now filled: later pixels may compare against it.
+            targetUnknown[p] = false
             done++
             if (done % 500 == 0) onProgress(done.toFloat() / total * 0.6f)
         }
@@ -322,14 +344,14 @@ object InpaintingCore {
                 val px = p % w; val py = p / w
                 var bestX = nnfX[p]; var bestY = nnfY[p]
                 var bestScore = if (bestX >= 0)
-                    patchDistance(px, py, bestX, bestY, w, h, result, dilated)
+                    patchDistance(px, py, bestX, bestY, w, h, result, targetUnknown)
                 else Float.MAX_VALUE
 
                 fun tryCandidate(cx: Int, cy: Int) {
                     val rx = cx.coerceIn(PATCH_RADIUS, w - 1 - PATCH_RADIUS)
                     val ry = cy.coerceIn(PATCH_RADIUS, h - 1 - PATCH_RADIUS)
                     if (!isPatchKnown(rx, ry, w, h, PATCH_RADIUS, dilated)) return
-                    val score = patchDistance(px, py, rx, ry, w, h, result, dilated)
+                    val score = patchDistance(px, py, rx, ry, w, h, result, targetUnknown)
                     if (score < bestScore) {
                         bestScore = score; bestX = rx; bestY = ry
                     }
