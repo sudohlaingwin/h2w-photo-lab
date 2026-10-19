@@ -401,8 +401,11 @@ open class GlEngine {
      * [render] then forces the mix strength to 0, because sampling an
      * unbound texture would return black and darken the image.
      * Must run on the GL thread.
+     *
+     * Declared open so unit tests can subclass a recording fake — zero
+     * runtime behavior change.
      */
-    fun uploadAiLut(lut: FloatArray?, n: Int) {
+    open fun uploadAiLut(lut: FloatArray?, n: Int) {
         if (lut == null || n <= 0 || lut.size != n * n * n * 3) {
             aiLutReady = false
             savedAiLut = null
@@ -486,8 +489,11 @@ open class GlEngine {
      * caller must call setSource(previewBitmap) afterwards and then
      * invalidateGpuAssets(), the same restore pattern refreshEditedThumbnail
      * uses. Must run on the GL thread.
+     *
+     * Declared open so unit tests can subclass a recording fake — zero
+     * runtime behavior change.
      */
-    fun bakeLut(state: EditState, n: Int): FloatArray {
+    open fun bakeLut(state: EditState, n: Int): FloatArray {
         val w = n * n
         val px = IntArray(w * n)
         for (y in 0 until n) {
