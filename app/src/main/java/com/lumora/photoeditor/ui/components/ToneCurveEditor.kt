@@ -27,6 +27,7 @@ import com.lumora.photoeditor.engine.activePreset
 import com.lumora.photoeditor.ui.state.Histogram
 import com.lumora.photoeditor.ui.theme.Lumora
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.lumora.photoeditor.ui.components.LumoraTextButton
 
 /**
@@ -62,6 +63,22 @@ fun ToneCurveEditor(
     // local drag copy for 60fps feedback; committed on release
     var dragCurve by remember(curve) { mutableStateOf(curve) }
     val shown = if (activeIdx != null) dragCurve else curve
+    // Index of the point whose In/Out values the readout row shows — his
+    // standing rule is that every adjustment shows its value as a
+    // percentage, and the curve editor had no numeric readout at all.
+    // Set on drag start / tap-select / tap-add; survives the drag so the
+    // value stays visible after release.
+    var readoutIdx by remember { mutableStateOf<Int?>(null) }
+    // Last curve value this editor produced via onChange. Preset chips,
+    // undo, or channel switches replace `curve` from outside; when that
+    // happens with no drag active the readout index is stale, so it is
+    // dropped instead of showing another point's values.
+    var lastLocal by remember { mutableStateOf(curve) }
+    if (activeIdx == null && readoutIdx != null && curve != lastLocal) {
+        readoutIdx = null
+    }
+    val readoutPoint = shown.points.sortedBy { it.x }
+        .getOrNull(activeIdx ?: readoutIdx ?: -1)
     // Spoken state mirrors the visual preset chips (LightPanel), so a
     // TalkBack user hears exactly which named preset is active — or, for a
     // hand-dragged curve, how many points it has.
@@ -98,8 +115,13 @@ fun ToneCurveEditor(
                             }
                             if (hit >= 0 && pts.size > 2) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                val next = ToneCurve(pts.filterIndexed { i, _ -> i != hit })
+                                // Indices shift on removal: drop the readout
+                                // rather than showing a neighboring point.
+                                lastLocal = next
+                                readoutIdx = null
                                 onBegin()
-                                onChange(ToneCurve(pts.filterIndexed { i, _ -> i != hit }))
+                                onChange(next)
                                 onEnd()
                             }
                         },
@@ -108,19 +130,31 @@ fun ToneCurveEditor(
                             val px = (offset.x / size.width).coerceIn(0f, 1f)
                             val py = (1f - offset.y / size.height).coerceIn(0f, 1f)
                             val pts = curve.points.sortedBy { it.x }
-                            val near = pts.any {
+                            val nearIdx = pts.indexOfFirst {
                                 abs(it.x - px) < 0.05f && abs(it.y - py) < 0.05f
                             }
-                            // A second point within 0.02 in x of an existing one is
-                            // degenerate: the drag clamp below computes an empty
-                            // [lo, hi] range for it and Float.coerceIn throws on an
-                            // empty range, crashing the app mid-drag. Reject the tap
-                            // so such a curve can never be built by hand.
-                            val xCrowded = pts.any { abs(it.x - px) < 0.02f }
-                            if (!near && !xCrowded) {
-                                onBegin()
-                                onChange(ToneCurve((pts + CurvePoint(px, py)).sortedBy { it.x }))
-                                onEnd()
+                            if (nearIdx >= 0) {
+                                // Tap an existing point: select it to inspect
+                                // its In/Out values in the readout row. No edit,
+                                // so no undo entry and no onChange.
+                                readoutIdx = nearIdx
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            } else {
+                                // A second point within 0.02 in x of an existing one is
+                                // degenerate: the drag clamp below computes an empty
+                                // [lo, hi] range for it and Float.coerceIn throws on an
+                                // empty range, crashing the app mid-drag. Reject the tap
+                                // so such a curve can never be built by hand.
+                                val xCrowded = pts.any { abs(it.x - px) < 0.02f }
+                                if (!xCrowded) {
+                                    val added = (pts + CurvePoint(px, py)).sortedBy { it.x }
+                                    val next = ToneCurve(added)
+                                    lastLocal = next
+                                    readoutIdx = added.indexOfFirst { it.x == px && it.y == py }
+                                    onBegin()
+                                    onChange(next)
+                                    onEnd()
+                                }
                             }
                         },
                     )
@@ -142,6 +176,7 @@ fun ToneCurveEditor(
                     }
                     if (hit >= 0) {
                         activeIdx = hit
+                        readoutIdx = hit
                         dragCurve = ToneCurve(pts)
                         onBegin()
                         true
@@ -166,6 +201,7 @@ fun ToneCurveEditor(
                 },
                 onDragEnd = {
                     activeIdx?.let {
+                        lastLocal = dragCurve
                         onChange(dragCurve)
                         onEnd()
                     }
@@ -174,13 +210,40 @@ fun ToneCurveEditor(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Live In/Out readout for the touched point — the curve editor
+            // previously showed no numbers at all, against his standing rule
+            // that every adjustment shows its value as a percentage.
+            val rp = readoutPoint
+            if (rp != null) {
+                val inPct = (rp.x * 100).roundToInt()
+                val outPct = (rp.y * 100).roundToInt()
+                Text(
+                    text = "In $inPct% · Out $outPct%",
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textSecondary,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Selected curve point: input $inPct percent, " +
+                            "output $outPct percent"
+                    },
+                )
+            } else {
+                Text(
+                    "Tap a point to inspect · tap empty space to add · double-tap to remove",
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textTertiary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             LumoraTextButton(onClick = {
+                val linear = ToneCurve(listOf(CurvePoint(0f, 0f), CurvePoint(1f, 1f)))
+                lastLocal = linear
+                readoutIdx = null
                 onBegin()
-                onChange(ToneCurve(listOf(CurvePoint(0f, 0f), CurvePoint(1f, 1f))))
+                onChange(linear)
                 onEnd()
             }) {
                 Text("Reset curve", style = Lumora.type.caption, color = Lumora.colors.textSecondary)
