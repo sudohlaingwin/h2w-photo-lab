@@ -149,7 +149,14 @@ fun ProofingExportScreen(
         val files = outcome?.files ?: return
         val intent = contactSheetShareIntent(context, files)
         if (intent != null) {
-            context.startActivity(Intent.createChooser(intent, "Share contact sheet"))
+            // A share sheet exists on normal devices, but managed profiles
+            // can disable sharing — never crash on a missing handler; the
+            // contact sheet file is already built.
+            try {
+                context.startActivity(Intent.createChooser(intent, "Share contact sheet"))
+            } catch (_: Exception) {
+                notice = "No app available to share the contact sheet"
+            }
         } else {
             notice = "Could not prepare the share — try again"
         }
