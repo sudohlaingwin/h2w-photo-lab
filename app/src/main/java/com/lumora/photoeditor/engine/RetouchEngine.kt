@@ -97,6 +97,13 @@ object RetouchEngine {
         // Pure IntArray in/out so it stays unit-testable on the JVM;
         // [rasterize] is the Bitmap wrapper the app and exporter call.
         for (spot in spots) {
+            // Non-finite brush parameters (NaN/±Inf from touch math or an AI
+            // detector dividing by zero) previously painted BLACK discs:
+            // NaN blend weights round to 0 in the pack sites, silently
+            // corrupting the photo instead of failing visibly. Skipping is
+            // strictly safer; valid spots are bit-identical to before.
+            // (Pinned by RetouchSpotSanitizeTest.)
+            if (!spot.isSane()) continue
             val b = spotBounds(spot, w, h) ?: continue
             val x0 = b[0]; val x1 = b[1]; val y0 = b[2]; val y1 = b[3]
             // This spot's contribution only, bbox-sized: applySpot writes
@@ -136,6 +143,19 @@ object RetouchEngine {
         }
         return outPx
     }
+
+    /**
+     * Rejects spots whose parameters are not finite numbers. A NaN/±Inf
+     * coordinate, size, source offset, or strength (touch math or an AI
+     * detector dividing by zero) has no meaningful geometry; every downstream
+     * kernel silently degrades it into a black disc (NaN blend weights round
+     * to 0 in the pack sites), so the only safe handling is to skip the spot.
+     */
+    private fun RetouchSpot.isSane(): Boolean =
+        x.isFinite() && y.isFinite() &&
+            srcX.isFinite() && srcY.isFinite() &&
+            size.isFinite() && feather.isFinite() &&
+            strength.isFinite() && textureKeep.isFinite()
 
     /** Pixel bounds a spot touches ([x0, x1, y0, y1]), or null when degenerate. */
     private fun spotBounds(s: RetouchSpot, w: Int, h: Int): IntArray? {        val cx = s.x * w; val cy = s.y * h
