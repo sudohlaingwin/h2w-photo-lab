@@ -263,14 +263,65 @@ vec3 applyToneChain(vec3 c) {
     float centers[8];
     centers[0]=0.0; centers[1]=0.0833; centers[2]=0.1667; centers[3]=0.3333;
     centers[4]=0.5; centers[5]=0.6667; centers[6]=0.75; centers[7]=0.8333;
-    for (int i = 0; i < 8; i++) {
-        float d = abs(fract(hsl.x - centers[i] + 0.5) - 0.5);
-        float w = 1.0 - smoothstep(0.045, 0.10, d);
-        if (w > 0.001) {
-            hsl.x = fract(hsl.x + uHsl[i].x * 0.09 * w);
-            hsl.y = clamp(hsl.y * (1.0 + uHsl[i].y * w), 0.0, 1.0);
-            hsl.z = clamp(hsl.z + uHsl[i].z * 0.35 * w, 0.0, 1.0);
-        }
+    // Unrolled x8 (was `for (int i = 0; i < 8; i++)`): loop-variable
+    // array indexing (uHsl[i], centers[i]) is miscompiled by several
+    // Mali drivers in fragment shaders -- every array index below is
+    // a constant expression now.
+    float d0 = abs(fract(hsl.x - centers[0] + 0.5) - 0.5);
+    float w0 = 1.0 - smoothstep(0.045, 0.10, d0);
+    if (w0 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[0].x * 0.09 * w0);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[0].y * w0), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[0].z * 0.35 * w0, 0.0, 1.0);
+    }
+    float d1 = abs(fract(hsl.x - centers[1] + 0.5) - 0.5);
+    float w1 = 1.0 - smoothstep(0.045, 0.10, d1);
+    if (w1 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[1].x * 0.09 * w1);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[1].y * w1), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[1].z * 0.35 * w1, 0.0, 1.0);
+    }
+    float d2 = abs(fract(hsl.x - centers[2] + 0.5) - 0.5);
+    float w2 = 1.0 - smoothstep(0.045, 0.10, d2);
+    if (w2 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[2].x * 0.09 * w2);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[2].y * w2), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[2].z * 0.35 * w2, 0.0, 1.0);
+    }
+    float d3 = abs(fract(hsl.x - centers[3] + 0.5) - 0.5);
+    float w3 = 1.0 - smoothstep(0.045, 0.10, d3);
+    if (w3 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[3].x * 0.09 * w3);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[3].y * w3), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[3].z * 0.35 * w3, 0.0, 1.0);
+    }
+    float d4 = abs(fract(hsl.x - centers[4] + 0.5) - 0.5);
+    float w4 = 1.0 - smoothstep(0.045, 0.10, d4);
+    if (w4 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[4].x * 0.09 * w4);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[4].y * w4), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[4].z * 0.35 * w4, 0.0, 1.0);
+    }
+    float d5 = abs(fract(hsl.x - centers[5] + 0.5) - 0.5);
+    float w5 = 1.0 - smoothstep(0.045, 0.10, d5);
+    if (w5 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[5].x * 0.09 * w5);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[5].y * w5), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[5].z * 0.35 * w5, 0.0, 1.0);
+    }
+    float d6 = abs(fract(hsl.x - centers[6] + 0.5) - 0.5);
+    float w6 = 1.0 - smoothstep(0.045, 0.10, d6);
+    if (w6 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[6].x * 0.09 * w6);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[6].y * w6), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[6].z * 0.35 * w6, 0.0, 1.0);
+    }
+    float d7 = abs(fract(hsl.x - centers[7] + 0.5) - 0.5);
+    float w7 = 1.0 - smoothstep(0.045, 0.10, d7);
+    if (w7 > 0.001) {
+        hsl.x = fract(hsl.x + uHsl[7].x * 0.09 * w7);
+        hsl.y = clamp(hsl.y * (1.0 + uHsl[7].y * w7), 0.0, 1.0);
+        hsl.z = clamp(hsl.z + uHsl[7].z * 0.35 * w7, 0.0, 1.0);
     }
     c = hsl2rgb(hsl);
 
@@ -278,12 +329,48 @@ vec3 applyToneChain(vec3 c) {
     if (uBw > 0.5) {
         vec3 bhsl = rgb2hsl(clamp(c, 0.0, 1.0));
         float bw = luma(c);
-        for (int i = 0; i < 8; i++) {
-            float d = abs(fract(bhsl.x - centers[i] + 0.5) - 0.5);
-            float w = 1.0 - smoothstep(0.045, 0.10, d);
-            if (w > 0.001) {
-                bw = clamp(bw + uBwMix[i] * 0.35 * w, 0.0, 1.0);
-            }
+        // Unrolled x8 (was `for (int i = 0; i < 8; i++)`): loop-variable
+        // array indexing (uBwMix[i], centers[i]) is miscompiled by several
+        // Mali drivers in fragment shaders -- every index is constant now.
+        float d0 = abs(fract(bhsl.x - centers[0] + 0.5) - 0.5);
+        float w0 = 1.0 - smoothstep(0.045, 0.10, d0);
+        if (w0 > 0.001) {
+            bw = clamp(bw + uBwMix[0] * 0.35 * w0, 0.0, 1.0);
+        }
+        float d1 = abs(fract(bhsl.x - centers[1] + 0.5) - 0.5);
+        float w1 = 1.0 - smoothstep(0.045, 0.10, d1);
+        if (w1 > 0.001) {
+            bw = clamp(bw + uBwMix[1] * 0.35 * w1, 0.0, 1.0);
+        }
+        float d2 = abs(fract(bhsl.x - centers[2] + 0.5) - 0.5);
+        float w2 = 1.0 - smoothstep(0.045, 0.10, d2);
+        if (w2 > 0.001) {
+            bw = clamp(bw + uBwMix[2] * 0.35 * w2, 0.0, 1.0);
+        }
+        float d3 = abs(fract(bhsl.x - centers[3] + 0.5) - 0.5);
+        float w3 = 1.0 - smoothstep(0.045, 0.10, d3);
+        if (w3 > 0.001) {
+            bw = clamp(bw + uBwMix[3] * 0.35 * w3, 0.0, 1.0);
+        }
+        float d4 = abs(fract(bhsl.x - centers[4] + 0.5) - 0.5);
+        float w4 = 1.0 - smoothstep(0.045, 0.10, d4);
+        if (w4 > 0.001) {
+            bw = clamp(bw + uBwMix[4] * 0.35 * w4, 0.0, 1.0);
+        }
+        float d5 = abs(fract(bhsl.x - centers[5] + 0.5) - 0.5);
+        float w5 = 1.0 - smoothstep(0.045, 0.10, d5);
+        if (w5 > 0.001) {
+            bw = clamp(bw + uBwMix[5] * 0.35 * w5, 0.0, 1.0);
+        }
+        float d6 = abs(fract(bhsl.x - centers[6] + 0.5) - 0.5);
+        float w6 = 1.0 - smoothstep(0.045, 0.10, d6);
+        if (w6 > 0.001) {
+            bw = clamp(bw + uBwMix[6] * 0.35 * w6, 0.0, 1.0);
+        }
+        float d7 = abs(fract(bhsl.x - centers[7] + 0.5) - 0.5);
+        float w7 = 1.0 - smoothstep(0.045, 0.10, d7);
+        if (w7 > 0.001) {
+            bw = clamp(bw + uBwMix[7] * 0.35 * w7, 0.0, 1.0);
         }
         c = vec3(bw);
     }

@@ -130,6 +130,25 @@ class ShaderSafetyTest {
     }
 
     @Test fun constant_loop_bounds_pass() {
+        // Constant-bound loops are fine; loop-VARIABLE array indexing is
+        // not (rule f) — so this loop uses constant indices only.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp vec3 uHsl[8];
+            void main() {
+                float s = 0.0;
+                for (int i = 0; i < 8; i++) { s += uHsl[0].x + float(i); }
+                for (int j = 8; j > 0; j--) { s -= float(j); }
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("CONSTLOOP" to src)).isEmpty())
+    }
+
+    @Test fun loop_indexed_uniform_array_is_flagged() {
+        // Rule (f): indexing a non-sampler uniform array with the loop
+        // variable is a Mali miscompile hazard even though the bound is
+        // constant — the shipped HSL mixer did exactly this until 2026-10-19.
         val src = """
             #version 300 es
             precision highp float;
@@ -137,10 +156,62 @@ class ShaderSafetyTest {
             void main() {
                 float s = 0.0;
                 for (int i = 0; i < 8; i++) { s += uHsl[i].x; }
-                for (int j = 8; j > 0; j--) { s -= float(j); }
             }
         """.trimIndent()
-        assertTrue(ShaderSafety.audit(listOf("CONSTLOOP" to src)).isEmpty())
+        val issues = ShaderSafety.audit(listOf("UARR" to src))
+        assertTrue(issues.any { it.rule == "dynamic-array-index" })
+        assertTrue(issues.none { it.rule == "dynamic-loop-bound" })
+        assertTrue(issues.none { it.rule == "dynamic-sampler-index" })
+    }
+
+    @Test fun loop_indexed_local_array_is_flagged() {
+        // Rule (f) also covers locals: `float centers[8]; ... centers[i]`.
+        val src = """
+            #version 300 es
+            precision highp float;
+            void main() {
+                float centers[8];
+                centers[0] = 0.0;
+                float s = 0.0;
+                for (int i = 0; i < 8; i++) { s += centers[i]; }
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("LARR" to src))
+        assertEquals(1, issues.size)
+        assertEquals("dynamic-array-index", issues[0].rule)
+        assertTrue(issues[0].line.contains("centers"))
+    }
+
+    @Test fun constant_indexed_plain_arrays_pass() {
+        // Constant indices into uniform and local arrays are always fine.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform highp vec3 uHsl[8];
+            uniform float uBwMix[8];
+            uniform float uDeconvK[25];
+            void main() {
+                float centers[8];
+                centers[0] = 0.0;
+                float s = uHsl[0].x + uHsl[7].z + uBwMix[3] + uDeconvK[24] + centers[0];
+            }
+        """.trimIndent()
+        assertTrue(ShaderSafety.audit(listOf("CARR" to src)).isEmpty())
+    }
+
+    @Test fun uniform_indexed_plain_array_is_flagged() {
+        // Non-constant, non-loop indices (e.g. a uniform) are flagged too.
+        val src = """
+            #version 300 es
+            precision highp float;
+            uniform float uBwMix[8];
+            uniform int uWhich;
+            void main() {
+                float s = uBwMix[uWhich];
+            }
+        """.trimIndent()
+        val issues = ShaderSafety.audit(listOf("UIDX" to src))
+        assertTrue(issues.any { it.rule == "dynamic-array-index" })
     }
 
     @Test fun dynamic_while_condition_is_flagged() {

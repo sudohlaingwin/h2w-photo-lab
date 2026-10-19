@@ -24,7 +24,14 @@ package com.lumora.photoeditor.engine
  * varying, a mutable counter) is flagged, so only literal conditions such
  * as `while (true)` with an internal break may appear. The shipped shaders
  * contain no `while` loops at all, so the rule is pure future-proofing.
- * This audit scans every shipped shader for all five patterns so a
+ * Rule (f) closes the remaining gap in rule (a): dynamic indexing of
+ * NON-sampler arrays. The shipped HSL/B&W mixer loops indexed
+ * `uHsl[i]` / `uBwMix[i]` / `centers[i]` with the loop variable until
+ * 2026-10-19 — legal ES 3.00, but several Mali drivers miscompile it in
+ * fragment shaders even when the loop bound is constant. The loops are now
+ * unrolled and the audit flags any non-constant index into any declared
+ * array, sampler or not.
+ * This audit scans every shipped shader for all six patterns so a
  * regression can never ship silently: it runs as a check inside the in-app
  * GPU self-test ([runSelfTest]) and is covered by [ShaderSafetyTest] unit
  * tests.
@@ -90,6 +97,24 @@ object ShaderSafety {
     /** Boolean literals: the only identifiers legal in a `while` condition. */
     private val whileLiteralKeywords = setOf("true", "false")
 
+    /**
+     * `uniform <type> name[N]` for any NON-sampler type (also with a
+     * precision qualifier). Sampler arrays are tracked separately by
+     * [samplerArrayDecl]; the caller filters sampler types out via the
+     * captured type name.
+     */
+    private val nonSamplerArrayDecl =
+        Regex("""uniform\s+(?:(?:lowp|mediump|highp)\s+)?(\w+)\s+(\w+)\s*\[\s*(\d+)\s*\]""")
+
+    /**
+     * Local array declaration: `float centers[8];` (also `const`).
+     * Anchored to line start so function declarations with array
+     * parameters (`void f(float x[8]);`) never match; the audit additionally
+     * skips lines containing `(` before applying this.
+     */
+    private val localArrayDecl =
+        Regex("""^\s*(?:const\s+)?(?:float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;""")
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -111,7 +136,13 @@ object ShaderSafety {
      *  - any `for` loop whose trip count is not a compile-time constant
      *    (dynamic loop bound — a classic Mali miscompile hazard), and
      *  - any `while` / `do`-`while` condition naming an identifier
-     *    (dynamic while condition — the same hazard class as (d)).
+     *    (dynamic while condition — the same hazard class as (d)), and
+     *  - any non-sampler array (uniform or local) indexed with a
+     *    non-constant expression — the loop-indexed `uHsl[i]` / `uBwMix[i]` /
+     *    `centers[i]` HSL/B&W mixer loops shipped exactly this until
+     *    2026-10-19; several Mali drivers miscompile dynamic array indexing
+     *    in fragment shaders even when the loop bound is constant, so the
+     *    shipped shaders index every array with constants only.
      */
     fun audit(sources: List<Pair<String, String>>): List<ShaderSafetyIssue> {
         val issues = mutableListOf<ShaderSafetyIssue>()
@@ -122,10 +153,23 @@ object ShaderSafety {
             val isEs300 = code.contains("#version 300 es")
             // Pass 1: declared sampler arrays.
             val samplers = mutableMapOf<String, Int>() // name -> size
+            // Pass 1b: declared non-sampler arrays (uniforms of any other
+            // type, plus locals like `float centers[8];`).
+            val plainArrays = mutableSetOf<String>()
             code.lines().forEach { rawLine ->
                 val line = stripLineComment(rawLine)
                 samplerArrayDecl.findAll(line).forEach { m ->
                     samplers[m.groupValues[1]] = m.groupValues[2].toInt()
+                }
+                nonSamplerArrayDecl.findAll(line).forEach { m ->
+                    if (!m.groupValues[1].contains("sampler", ignoreCase = true)) {
+                        plainArrays += m.groupValues[2]
+                    }
+                }
+                if (!line.contains('(')) {
+                    localArrayDecl.findAll(line).forEach { m ->
+                        plainArrays += m.groupValues[1]
+                    }
                 }
             }
             // Pass 2: every index into a declared sampler array must be constant.
@@ -148,6 +192,20 @@ object ShaderSafety {
                             issues += ShaderSafetyIssue(name, idx + 1,
                                 "dynamic-sampler-index",
                                 "index [$expr] into sampler array '$sampler': $line")
+                        }
+                    }
+                }
+                // Pass 2b: every index into a declared non-sampler array
+                // must be constant too — dynamic indexing of plain arrays
+                // is the same Mali miscompile hazard as rule (a).
+                for (arr in plainArrays) {
+                    val use = Regex(Regex.escape(arr) + """\s*\[\s*([^\]]*)\]""")
+                    use.findAll(line).forEach { m ->
+                        val expr = m.groupValues[1].trim()
+                        if (!constantIndex.matches(expr)) {
+                            issues += ShaderSafetyIssue(name, idx + 1,
+                                "dynamic-array-index",
+                                "index [$expr] into array '$arr': $line")
                         }
                     }
                 }
