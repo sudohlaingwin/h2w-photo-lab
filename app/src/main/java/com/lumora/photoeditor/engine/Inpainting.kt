@@ -303,21 +303,9 @@ object Inpainting {
         }
         InpaintingCore.boxBlurAlpha(alpha, bw, bh, r)
 
-        val outPx = IntArray(bw * bh)
-        for (i in origPx.indices) {
-            val a = alpha[i].coerceIn(0f, 1f)
-            if (a <= 0f) {
-                outPx[i] = origPx[i]
-            } else if (a >= 1f) {
-                outPx[i] = inpPx[i]
-            } else {
-                val o = origPx[i]; val n = inpPx[i]
-                val red = (((o shr 16) and 0xFF) * (1 - a) + ((n shr 16) and 0xFF) * a).toInt()
-                val g = (((o shr 8) and 0xFF) * (1 - a) + ((n shr 8) and 0xFF) * a).toInt()
-                val b = ((o and 0xFF) * (1 - a) + (n and 0xFF) * a).toInt()
-                outPx[i] = (255 shl 24) or (red shl 16) or (g shl 8) or b
-            }
-        }
+        // Shared feathered seam blend (InpaintingCore.blendPixelsAlpha) —
+        // the same math blendCropped uses below.
+        val outPx = InpaintingCore.blendPixelsAlpha(origPx, inpPx, alpha)
         out.setPixels(outPx, 0, bw, x0, y0, bw, bh)
         return out
     }
@@ -356,21 +344,9 @@ object Inpainting {
         val fillPx = IntArray(bw * bh)
         original.getPixels(origPx, 0, bw, x0, y0, bw, bh)
         filled.getPixels(fillPx, 0, bw, 0, 0, bw, bh)
-        val outPx = IntArray(bw * bh)
-        for (i in origPx.indices) {
-            val a = alpha[i].coerceIn(0f, 1f)
-            if (a <= 0f) {
-                outPx[i] = origPx[i]
-            } else if (a >= 1f) {
-                outPx[i] = fillPx[i]
-            } else {
-                val o = origPx[i]; val n = fillPx[i]
-                val r = (((o shr 16) and 0xFF) * (1 - a) + ((n shr 16) and 0xFF) * a).toInt()
-                val g = (((o shr 8) and 0xFF) * (1 - a) + ((n shr 8) and 0xFF) * a).toInt()
-                val b = ((o and 0xFF) * (1 - a) + (n and 0xFF) * a).toInt()
-                outPx[i] = (255 shl 24) or (r shl 16) or (g shl 8) or b
-            }
-        }
+        // Shared feathered seam blend (InpaintingCore.blendPixelsAlpha) —
+        // the same math blendMasked uses above.
+        val outPx = InpaintingCore.blendPixelsAlpha(origPx, fillPx, alpha)
         out.setPixels(outPx, 0, bw, x0, y0, bw, bh)
         return out
     }

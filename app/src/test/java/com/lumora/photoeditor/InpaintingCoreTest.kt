@@ -232,4 +232,69 @@ class InpaintingCoreTest {
             assertTrue("filled value $v out of sane range", v in 0..255)
         }
     }
+
+    // ---- blendPixelsAlpha (Remove-tool feathered seam blend) ----
+
+    @Test
+    fun blendPixelsAlpha_alphaEndsAreExact() {
+        val o = 0xFF102030.toInt(); val n = 0xFF8090A0.toInt()
+        val out0 = InpaintingCore.blendPixelsAlpha(intArrayOf(o), intArrayOf(n), floatArrayOf(0f))
+        assertEquals(o, out0[0]) // alpha 0 keeps the original pixel bit-exact
+        val out1 = InpaintingCore.blendPixelsAlpha(intArrayOf(o), intArrayOf(n), floatArrayOf(1f))
+        assertEquals(n, out1[0]) // alpha 1 takes the inpainted pixel bit-exact
+        // Out-of-range alphas are coerced, never clamped channels.
+        val outNeg = InpaintingCore.blendPixelsAlpha(intArrayOf(o), intArrayOf(n), floatArrayOf(-0.7f))
+        assertEquals(o, outNeg[0])
+        val outOver = InpaintingCore.blendPixelsAlpha(intArrayOf(o), intArrayOf(n), floatArrayOf(1.4f))
+        assertEquals(n, outOver[0])
+    }
+
+    @Test
+    fun blendPixelsAlpha_unbiasedRounding() {
+        // Deterministic half-up probe: 100.5 must round to 101, not
+        // truncate to 100 (the 1-LSB dark-ring defect).
+        val half = InpaintingCore.blendPixelsAlpha(
+            intArrayOf(0xFF646464.toInt()), intArrayOf(0xFF656565.toInt()),
+            floatArrayOf(0.5f))
+        assertEquals(0x65, (half[0] shr 16) and 0xFF)
+        // Feather-band sweep vs the exact double reference: mean signed
+        // deviation must be ~0 (truncation would sit at ~-0.5 levels).
+        val rnd = java.util.Random(11)
+        var sum = 0.0; var n = 0
+        repeat(4000) {
+            val ov = rnd.nextInt(256); val nv = rnd.nextInt(256)
+            val a = rnd.nextFloat()
+            val out = InpaintingCore.blendPixelsAlpha(
+                intArrayOf(0xFF000000.toInt() or (ov shl 16) or (ov shl 8) or ov),
+                intArrayOf(0xFF000000.toInt() or (nv shl 16) or (nv shl 8) or nv),
+                floatArrayOf(a))
+            val got = ((out[0] shr 16) and 0xFF).toDouble()
+            val exact = ov * (1.0 - a) + nv * a
+            sum += got - exact; n++
+        }
+        val mean = sum / n
+        assertTrue("blend is systematically biased (mean dev=$mean)", abs(mean) <= 0.15)
+    }
+
+    @Test
+    fun boxBlurRgb_unbiasedVsFloatReference() {
+        // The float path is the exact reference; the int pack must not add
+        // a systematic darkening (truncation would bias it ~-0.5 LSB).
+        val rnd = java.util.Random(7)
+        val w = 16; val h = 12
+        val src = IntArray(w * h) { rnd.nextInt(0x1000000) }
+        val f = InpaintingCore.boxBlurRgbFloat(src, w, h, 2)
+        val i = InpaintingCore.boxBlurRgb(src, w, h, 2)
+        var sum = 0.0; var n = 0
+        for (k in src.indices) {
+            for (c in 0..2) {
+                val fv = f[k * 3 + c].toDouble()
+                val iv = (((i[k] shr (16 - 8 * c)) and 0xFF)).toDouble()
+                assertTrue(abs(fv - iv) <= 1.0)
+                sum += iv - fv; n++
+            }
+        }
+        val mean = sum / n
+        assertTrue("boxBlurRgb pack is systematically biased (mean dev=$mean)", abs(mean) <= 0.2)
+    }
 }

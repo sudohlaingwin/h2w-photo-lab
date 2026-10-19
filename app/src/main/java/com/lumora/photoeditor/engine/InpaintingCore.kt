@@ -3,6 +3,7 @@ package com.lumora.photoeditor.engine
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
@@ -203,11 +204,52 @@ object InpaintingCore {
         val n = w * h
         val out = IntArray(n)
         for (i in 0 until n) {
-            out[i] = (r[i].toInt().coerceIn(0, 255) shl 16) or
-                (g[i].toInt().coerceIn(0, 255) shl 8) or
-                b[i].toInt().coerceIn(0, 255)
+            // roundToInt (NOT toInt): truncating the blurred float channels
+            // darkens every pixel by ~0.5 LSB on average — a visible dulling
+            // of the tone reference on wide blurs. Rounding is unbiased.
+            out[i] = (r[i].roundToInt().coerceIn(0, 255) shl 16) or
+                (g[i].roundToInt().coerceIn(0, 255) shl 8) or
+                b[i].roundToInt().coerceIn(0, 255)
         }
         return out
+    }
+
+    /**
+     * Feathered alpha blend of two same-size packed-ARGB pixel arrays —
+     * the seam blend the Remove tool applies between the inpainted region
+     * and the untouched photo ([Inpainting.blendMasked] and
+     * [Inpainting.blendCropped] share it).
+     *
+     * [alpha] is per-pixel 0..1 (0 = keep [origPx], 1 = take [newPx]); it
+     * is coerced defensively. Kept here (Android-free) so the exact shipped
+     * blend math is harness-testable.
+     */
+    fun blendPixelsAlpha(
+        origPx: IntArray, newPx: IntArray, alpha: FloatArray,
+    ): IntArray {
+        require(origPx.size == newPx.size && newPx.size == alpha.size) {
+            "size mismatch"
+        }
+        val outPx = IntArray(origPx.size)
+        for (i in origPx.indices) {
+            val a = alpha[i].coerceIn(0f, 1f)
+            if (a <= 0f) {
+                outPx[i] = origPx[i]
+            } else if (a >= 1f) {
+                outPx[i] = newPx[i]
+            } else {
+                val o = origPx[i]; val n = newPx[i]
+                // roundToInt (NOT toInt): truncation biases every feather-band
+                // pixel ~0.5 LSB darker — a faint dark ring around every
+                // removal. Rounding is unbiased (same fix class as the
+                // RetouchEngine heal/clone pack and the wavelet round-trip).
+                val r = (((o shr 16) and 0xFF) * (1 - a) + ((n shr 16) and 0xFF) * a).roundToInt()
+                val g = (((o shr 8) and 0xFF) * (1 - a) + ((n shr 8) and 0xFF) * a).roundToInt()
+                val b = ((o and 0xFF) * (1 - a) + (n and 0xFF) * a).roundToInt()
+                outPx[i] = (255 shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
+        return outPx
     }
 
     /**
