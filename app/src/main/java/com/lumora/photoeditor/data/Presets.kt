@@ -614,7 +614,12 @@ object Presets {
 
     fun blend(a: EditState, b: EditState, t: Float): EditState {
         if (t <= 0f) return a
-        if (t >= 1f) return b
+        // Full-strength apply takes the preset's state wholesale — except the
+        // photo's own look-transfer match, which presets never carry and must
+        // never wipe ("Always keep a's", same contract as the partial-strength
+        // branch below). Without this, tapping a preset at 100% silently
+        // discarded an active look-transfer grade (PresetPanel full apply).
+        if (t >= 1f) return b.copy(lookTransfer = a.lookTransfer)
         fun f(x: Float, y: Float) = x + (y - x) * t
         val useB = t >= 0.5f
         return EditState(
