@@ -484,18 +484,6 @@ data class GeometryParams(
     val constrainCrop: Boolean = true,
 )
 
-@Serializable
-data class CropParams(
-    /** Normalized 0..1 rect in the source image; full image by default. */
-    val left: Float = 0f,
-    val top: Float = 0f,
-    val right: Float = 1f,
-    val bottom: Float = 1f,
-    /** Target aspect or null for free. */
-    val aspect: Float? = null,
-    val locked: Boolean = false,
-)
-
 // ---------------------------------------------------------------------------
 // Masks
 // ---------------------------------------------------------------------------
