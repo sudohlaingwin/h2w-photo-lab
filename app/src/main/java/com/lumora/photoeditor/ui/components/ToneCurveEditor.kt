@@ -111,7 +111,13 @@ fun ToneCurveEditor(
                             val near = pts.any {
                                 abs(it.x - px) < 0.05f && abs(it.y - py) < 0.05f
                             }
-                            if (!near) {
+                            // A second point within 0.02 in x of an existing one is
+                            // degenerate: the drag clamp below computes an empty
+                            // [lo, hi] range for it and Float.coerceIn throws on an
+                            // empty range, crashing the app mid-drag. Reject the tap
+                            // so such a curve can never be built by hand.
+                            val xCrowded = pts.any { abs(it.x - px) < 0.02f }
+                            if (!near && !xCrowded) {
                                 onBegin()
                                 onChange(ToneCurve((pts + CurvePoint(px, py)).sortedBy { it.x }))
                                 onEnd()
@@ -150,7 +156,11 @@ fun ToneCurveEditor(
                     // keep x-ordering (endpoints locked horizontally)
                     val lo = if (idx > 0) pts[idx - 1].x + 0.01f else 0f
                     val hi = if (idx < pts.size - 1) pts[idx + 1].x - 0.01f else 1f
-                    nx = nx.coerceIn(lo, hi)
+                    // minOf hard-guards curves built elsewhere (presets, restored
+                    // edits) whose neighbors sit within 0.02 in x: coerceIn throws
+                    // IllegalArgumentException on an empty range, which would crash
+                    // the app on the UI thread mid-drag.
+                    nx = nx.coerceIn(minOf(lo, hi), hi)
                     pts[idx] = CurvePoint(nx, ny)
                     dragCurve = ToneCurve(pts)
                 },
