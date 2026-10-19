@@ -614,12 +614,18 @@ object Presets {
 
     fun blend(a: EditState, b: EditState, t: Float): EditState {
         if (t <= 0f) return a
-        // Full-strength apply takes the preset's state wholesale — except the
-        // photo's own look-transfer match, which presets never carry and must
-        // never wipe ("Always keep a's", same contract as the partial-strength
-        // branch below). Without this, tapping a preset at 100% silently
-        // discarded an active look-transfer grade (PresetPanel full apply).
-        if (t >= 1f) return b.copy(lookTransfer = a.lookTransfer)
+        // Full-strength apply takes the preset's state wholesale — except
+        // the photo's own look-transfer match AND its AI Pro Retouch grade,
+        // which presets never carry and must never wipe ("Always keep a's",
+        // same contract as the partial-strength branch below). Without this,
+        // tapping a preset at 100% silently discarded an active AI Pro
+        // Retouch grade — and would have APPLIED a saved foreign preset's
+        // photo-specific weights/wbGains to the wrong photo.
+        // aiRetouch is per-photo (weights measured from THIS photo's
+        // analysis, wbGains from ITS cast, deltas embedded in light params),
+        // exactly like lookTransfer: sanitizedForPaste() strips it for the
+        // same reason.
+        if (t >= 1f) return b.copy(lookTransfer = a.lookTransfer, aiRetouch = a.aiRetouch)
         fun f(x: Float, y: Float) = x + (y - x) * t
         val useB = t >= 0.5f
         return EditState(
@@ -727,6 +733,13 @@ object Presets {
             // applying a preset must neither wipe the current photo's match
             // nor fabricate one from the preset's photo. Always keep a's.
             lookTransfer = a.lookTransfer,
+            // AI Pro Retouch grade: same rule. The weights are measured
+            // from THIS photo's analysis, the wbGains from ITS cast, and
+            // the clarity/texture/dehaze deltas sit inside the blended
+            // light params above — blending toward the preset's (always
+            // neutral or foreign) aiRetouch would silently delete the
+            // grade, or worse, bake another photo's grade onto this one.
+            aiRetouch = a.aiRetouch,
         )
     }
 

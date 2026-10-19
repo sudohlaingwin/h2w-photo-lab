@@ -94,11 +94,12 @@ class PresetsTest {
         val preset = p(EditState(light = LightParams(exposure = 5f)))
         val out = Presets.apply(cur, preset, 1f)
         // Full-strength apply = the preset's state, EXCEPT the photo's own
-        // look-transfer match, which presets must never wipe (documented in
-        // Presets.blend: "Always keep a's").
-        assertEquals(preset.state.copy(lookTransfer = cur.lookTransfer), out)
+        // look-transfer match AND its AI Pro Retouch grade, which presets
+        // must never wipe (documented in Presets.blend: "Always keep a's").
+        assertEquals(preset.state.copy(lookTransfer = cur.lookTransfer, aiRetouch = cur.aiRetouch), out)
         assertEquals(cur.lookTransfer, out.lookTransfer)
         assertTrue(out.lookTransfer.isActive())
+        assertEquals(cur.aiRetouch, out.aiRetouch)
     }
 
     @Test fun strengthIsClamped() {
@@ -160,13 +161,57 @@ class PresetsTest {
         assertFalse(out.lookTransfer.isActive())
     }
 
-    @Test fun aiRetouchPartialStrengthResetsToDefault() {
-        // Current behavior, pinned deliberately: blend() does not carry
-        // aiRetouch, so a partial-strength preset application resets it to
-        // defaults. (Tension: this silently drops an active AI Pro Retouch
-        // grade — candidate for a future fix; logged, not changed here.)
-        val out = Presets.apply(cur, p(EditState(light = LightParams(exposure = 5f))), 0.5f)
+    @Test fun aiRetouchKeptAtPartialStrength() {
+        // blend() keeps the photo's own AI Pro Retouch grade at partial
+        // strength — the per-photo contract (same as lookTransfer). Applying
+        // a 50% preset over an active AI grade must not silently delete it.
+        val active = AiRetouchParams(
+            enabled = true,
+            weights = listOf(0.5f, 0.2f, 0.2f, 0.1f),
+            strength = 0.7f,
+            clarityDelta = 8f, textureDelta = -3f, dehazeDelta = 2f,
+            wbGains = listOf(1.02f, 1.0f, 0.98f),
+        )
+        val out = Presets.apply(
+            cur.copy(aiRetouch = active),
+            p(EditState(light = LightParams(exposure = 5f))), 0.5f)
+        assertEquals(active, out.aiRetouch)
+    }
+
+    @Test fun aiRetouchKeptAtFullStrength() {
+        // Full-strength preset application takes the preset's state
+        // wholesale — except the photo's own aiRetouch (and lookTransfer).
+        // Tapping a preset at 100% over an active AI Pro Retouch grade keeps
+        // the grade; the preset's neutral aiRetouch must never wipe it.
+        val active = cur.aiRetouch
+        val out = Presets.apply(cur, p(EditState(light = LightParams(exposure = 5f))), 1f)
+        assertEquals(active, out.aiRetouch)
+    }
+
+    @Test fun aiRetouchNeverFabricatedFromPreset() {
+        // A preset carrying aiRetouch (e.g. an unsanitized legacy file) must
+        // not activate an AI grade on the target photo: the weights/wbGains
+        // were measured from the preset source's pixels.
+        val foreign = AiRetouchParams(
+            enabled = true, strength = 1f, wbGains = listOf(1.1f, 1.0f, 0.9f))
+        val out = Presets.apply(EditState.DEFAULT, p(EditState(aiRetouch = foreign)), 0.6f)
+        assertFalse(out.aiRetouch.enabled)
         assertEquals(AiRetouchParams(), out.aiRetouch)
+    }
+
+    @Test fun aiRetouchSurvivesSliderDragPath() {
+        // The PresetPanel strength-slider path blends light params while the
+        // AI deltas live inside them: after the fix, the delta record in
+        // aiRetouch stays paired with the blended light values instead of
+        // being orphaned by a wipe.
+        val active = AiRetouchParams(enabled = true, strength = 0.6f, clarityDelta = 8f)
+        val base = cur.copy(
+            light = cur.light.copy(clarity = 10f),
+            aiRetouch = active,
+        )
+        val out = Presets.apply(base, p(EditState(light = LightParams(clarity = 50f))), 0.4f)
+        assertEquals(8f, out.aiRetouch.clarityDelta, 1e-4f)
+        assertTrue(approx(out.light.clarity, 10f + (50f - 10f) * 0.4f))
     }
 
     @Test fun customPresetMetadata() {
