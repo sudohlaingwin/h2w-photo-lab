@@ -58,7 +58,13 @@ interface LibraryDao {
     @Query("SELECT * FROM images WHERE lastEdited = 0 ORDER BY dateAdded DESC")
     suspend fun unedited(): List<LibraryImage>
 
-    @Query("SELECT * FROM images WHERE displayName LIKE '%' || :q || '%' OR folder LIKE '%' || :q || '%' ORDER BY dateAdded DESC")
+    /**
+     * Contains-search over name and folder. The [q] parameter MUST be the
+     * output of [escapeLikePattern] (applied by the caller), because the
+     * pattern is wrapped in `%...%` and the query declares ESCAPE '\':
+     * passing a raw user query would turn typed %, _ or \ into wildcards.
+     */
+    @Query("SELECT * FROM images WHERE displayName LIKE '%' || :q || '%' ESCAPE '\\' OR folder LIKE '%' || :q || '%' ESCAPE '\\' ORDER BY dateAdded DESC")
     suspend fun search(q: String): List<LibraryImage>
 
     @Query("SELECT * FROM images WHERE id = :id")

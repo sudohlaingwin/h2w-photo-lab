@@ -395,7 +395,9 @@ class LibraryRepository(
         }.filter { matchesKeywordFilter(it) && matchesSmartCollection(it) && matchesGallery(it) }
         val combined =
             if (query.isBlank()) base
-            else dao.search(query).filter { matchesActiveFilter(it) }
+            // Escape LIKE wildcards so a typed %, _ or \ matches literally
+            // (LibraryDao.search declares ESCAPE '\'; see escapeLikePattern).
+            else dao.search(escapeLikePattern(query)).filter { matchesActiveFilter(it) }
         emitSorted(combined)
     }
 
