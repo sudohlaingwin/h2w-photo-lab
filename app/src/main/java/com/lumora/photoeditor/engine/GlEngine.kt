@@ -12,8 +12,11 @@ import java.nio.FloatBuffer
  * be called on the thread that owns the current EGL context (the
  * GLSurfaceView GL thread). Preview and export share this engine; export
  * renders tiled into an FBO and reads pixels back on the same thread.
+ *
+ * Declared open (with [uploadLookLut] open) so unit tests can subclass a
+ * recording fake — zero runtime behavior change.
  */
-class GlEngine {
+open class GlEngine {
 
     private var program = 0
     private var blurProgram = 0
@@ -436,8 +439,10 @@ class GlEngine {
      * then forces the mix strength to 0, because sampling an unbound
      * texture would return black and darken the image. Must run on the GL
      * thread.
+     *
+     * Open so unit-test fakes can override it; the real body is unchanged.
      */
-    fun uploadLookLut(lut: FloatArray?, n: Int) {
+    open fun uploadLookLut(lut: FloatArray?, n: Int) {
         if (lut == null || n <= 0 || lut.size != n * n * n * 3) {
             lookLutReady = false
             savedLookLut = null
