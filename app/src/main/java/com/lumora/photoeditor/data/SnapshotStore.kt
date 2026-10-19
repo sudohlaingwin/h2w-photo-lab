@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
@@ -42,14 +41,13 @@ class SnapshotStore(context: Context) {
 
     private fun dirFor(imageId: String): File = File(root, imageId).also { it.mkdirs() }
 
+    /** Blocking file I/O for one photo's snapshots; SnapshotStore adds the
+     *  coroutine shell and the live StateFlows. The exact Json config this
+     *  store has always used is injected so the on-disk bytes never change. */
+    private fun ioFor(imageId: String): SnapshotSidecarIo = SnapshotSidecarIo(dirFor(imageId), json)
+
     private fun readAll(dir: File): List<EditSnapshot> =
-        dir.listFiles { f -> f.extension == "json" }
-            ?.mapNotNull { f ->
-                try { json.decodeFromString<EditSnapshot>(f.readText()) }
-                catch (_: Exception) { null }
-            }
-            .orEmpty()
-            .sortedByDescending { it.createdAt }
+        SnapshotSidecarIo(dir, json).readAll()
 
     suspend fun refresh(imageId: String) = withContext(Dispatchers.IO) {
         val list = readAll(dirFor(imageId))
@@ -72,11 +70,11 @@ class SnapshotStore(context: Context) {
                 createdAt = System.currentTimeMillis(),
                 state = state,
             )
-            val dir = dirFor(imageId)
+            val io = ioFor(imageId)
             try {
-                File(dir, "${snap.id}.json").writeText(json.encodeToString(snap))
-                readAll(dir).snapshotsToEvict().forEach { old ->
-                    File(dir, "${old.id}.json").delete()
+                io.writeSnapshot(snap)
+                io.readAll().snapshotsToEvict().forEach { old ->
+                    io.deleteSnapshot(old.id)
                 }
             } catch (_: Exception) {
                 return@withContext null
@@ -86,7 +84,7 @@ class SnapshotStore(context: Context) {
         }
 
     suspend fun delete(imageId: String, snapshotId: String) = withContext(Dispatchers.IO) {
-        File(dirFor(imageId), "$snapshotId.json").delete()
+        ioFor(imageId).deleteSnapshot(snapshotId)
         refresh(imageId)
     }
 
@@ -94,11 +92,10 @@ class SnapshotStore(context: Context) {
     suspend fun rename(imageId: String, snapshotId: String, name: String) =
         withContext(Dispatchers.IO) {
             val clean = cleanSnapshotName(name) ?: return@withContext
-            val f = File(dirFor(imageId), "$snapshotId.json")
-            val cur = try { json.decodeFromString<EditSnapshot>(f.readText()) }
-            catch (_: Exception) { null } ?: return@withContext
+            val io = ioFor(imageId)
+            val cur = io.readSnapshot(snapshotId) ?: return@withContext
             try {
-                f.writeText(json.encodeToString(cur.copy(name = clean)))
+                io.writeSnapshot(cur.copy(name = clean))
             } catch (_: Exception) {
                 return@withContext
             }
