@@ -55,6 +55,32 @@ fun normalizeKeyword(raw: String): String? {
 fun keywordKeyOf(display: String): String =
     display.lowercase(Locale.ROOT)
 
+/**
+ * Sanitizes raw keyword strings loaded from disk into a store-ready list:
+ * drops unusable entries ([normalizeKeyword] nulls), de-duplicates
+ * case-insensitively (first occurrence wins), caps at [MAX_KEYWORDS_PER_PHOTO],
+ * sorts by canonical key. Pure — this is the exact pipeline
+ * [KeywordStore.ensureLoaded] applies; pinned by KeywordStoreTest.
+ */
+internal fun sanitizeKeywordList(raw: List<String>): List<String> =
+    raw.mapNotNull { normalizeKeyword(it) }
+        .distinctBy { keywordKeyOf(it) }
+        .take(MAX_KEYWORDS_PER_PHOTO)
+        .sortedBy { keywordKeyOf(it) }
+
+/**
+ * Decides whether [display] (already normalized) may join [existing]: rejects
+ * case-insensitive duplicates and a full photo ([MAX_KEYWORDS_PER_PHOTO]).
+ * Pure — this is the exact gate [KeywordStore.addKeyword] applies; pinned by
+ * KeywordStoreTest. The library-wide [MAX_DISTINCT_KEYWORDS] gate stays in
+ * the store (it needs the global display map).
+ */
+internal fun canAddKeyword(existing: List<String>, display: String): Boolean {
+    if (existing.size >= MAX_KEYWORDS_PER_PHOTO) return false
+    val key = keywordKeyOf(display)
+    return existing.none { keywordKeyOf(it) == key }
+}
+
 class KeywordStore(context: Context) {
 
     private val file = File(context.filesDir, "keywords.json")
@@ -83,10 +109,7 @@ class KeywordStore(context: Context) {
                         val raw: Map<String, List<String>> =
                             json.decodeFromString(file.readText())
                         for ((id, kws) in raw) {
-                            val clean = kws.mapNotNull { normalizeKeyword(it) }
-                                .distinctBy { keywordKeyOf(it) }
-                                .take(MAX_KEYWORDS_PER_PHOTO)
-                                .sortedBy { keywordKeyOf(it) }
+                            val clean = sanitizeKeywordList(kws)
                             if (clean.isNotEmpty()) {
                                 data[id] = clean.toMutableList()
                                 for (k in clean) displayFor.putIfAbsent(keywordKeyOf(k), k)
@@ -123,8 +146,7 @@ class KeywordStore(context: Context) {
         ensureLoaded()
         return mutex.withLock {
             val list = data.getOrPut(imageId) { mutableListOf() }
-            if (list.any { keywordKeyOf(it) == key }) return false
-            if (list.size >= MAX_KEYWORDS_PER_PHOTO) return false
+            if (!canAddKeyword(list, display)) return false
             if (!displayFor.containsKey(key) && displayFor.size >= MAX_DISTINCT_KEYWORDS) return false
             list.add(display)
             list.sortBy { keywordKeyOf(it) }
