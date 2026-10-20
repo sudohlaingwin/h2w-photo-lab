@@ -541,7 +541,9 @@ class LibraryRepository(
                 // Cancellation stays cooperative; anything else only costs
                 // that one photo, never the batch and never the process.
                 if (t is CancellationException) throw t
-                Log.w(TAG, "import skipped unreadable photo: $uri", t)
+                // Log only the document id, never the full URI — content URIs can
+                // expose folder names the user would not expect in logcat.
+                Log.w(TAG, "import skipped unreadable photo: ${uri.lastPathSegment}", t)
                 null
             }
             if (id != null) ids.add(id) else skipped++
