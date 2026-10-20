@@ -69,12 +69,14 @@ class AppSettings(context: Context) {
      *  sibling setting: a stray pref value (backup restore, old build) must
      *  never land unvalidated in the flow, or the Settings selector would
      *  show no selection and the MainActivity theme `when` would silently
-     *  fall through to system default. */
-    private val _themeMode = MutableStateFlow(prefs.getInt("theme_mode", 0).coerceIn(0, 2))
+     *  fall through to system default. Coercion lives in [ThemeModeGuard] so
+     *  init and setter can never disagree. */
+    private val _themeMode = MutableStateFlow(
+        ThemeModeGuard.coerce(prefs.getInt("theme_mode", 0)))
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
     fun setThemeMode(v: Int) {
-        val t = v.coerceIn(0, 2)
+        val t = ThemeModeGuard.coerce(v)
         prefs.edit().putInt("theme_mode", t).apply()
         _themeMode.value = t
     }
