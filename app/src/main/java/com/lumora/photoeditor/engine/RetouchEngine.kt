@@ -769,7 +769,15 @@ object RetouchEngine {
         val r = (a[0] * (1 - tx) + b[0] * tx) * (1 - ty) + (cc[0] * (1 - tx) + d[0] * tx) * ty
         val g = (a[1] * (1 - tx) + b[1] * tx) * (1 - ty) + (cc[1] * (1 - tx) + d[1] * tx) * ty
         val bl = (a[2] * (1 - tx) + b[2] * tx) * (1 - ty) + (cc[2] * (1 - tx) + d[2] * tx) * ty
-        return (r.toInt() shl 16) or (g.toInt() shl 8) or bl.toInt()
+        // Pack with round-to-nearest, not truncation (2026-10-20): the old
+        // `.toInt()` biased every fractional heal/clone texture sample down
+        // by up to 1 level per channel — the same defect class as the
+        // overStraight and skin-smoothing pack sites. Bilinear output is
+        // genuinely fractional, so truncation is a systematic -0.5 LSB
+        // darkening of every interpolated sample (and it feeds the
+        // clone/heal tone offset at the call sites).
+        return (r.roundToInt().coerceIn(0, 255) shl 16) or
+            (g.roundToInt().coerceIn(0, 255) shl 8) or bl.roundToInt().coerceIn(0, 255)
     }
 
     /**
