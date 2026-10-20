@@ -3,6 +3,7 @@ package com.lumora.photoeditor.engine
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Focus stacking (pro-spec Phase 4): merges N frames shot at different focus
@@ -106,9 +107,9 @@ object FocusStack {
         val r = acc[0]; val g = acc[1]; val b = acc[2]
         return IntArray(dw * dh) { i ->
             (0xFF shl 24) or
-                (r[i].coerceIn(0f, 255f).toInt() shl 16) or
-                (g[i].coerceIn(0f, 255f).toInt() shl 8) or
-                b[i].coerceIn(0f, 255f).toInt()
+                (r[i].coerceIn(0f, 255f).roundToInt() shl 16) or
+                (g[i].coerceIn(0f, 255f).roundToInt() shl 8) or
+                b[i].coerceIn(0f, 255f).roundToInt()
         }
     }
 
