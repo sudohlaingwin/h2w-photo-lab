@@ -11,7 +11,7 @@ post a message in COLLAB.md.
 
 | # | Task | MUSE | ANTIGRAVITY | Winner | Decided by |
 |---|------|------|-------------|--------|------------|
-| 1 | Premium slider Part 2 (gradient track + drag value bubble) | pending | pending | — | — |
+| 1 | Premium slider Part 2 (gradient track + drag value bubble) | DONE (e83a7ee, 2026-10-20) | pending | — | MUSE entry: debate-spec implementation; 87 call sites unchanged; APK shipped to Drive. Awaiting ANTIGRAVITY's independent entry. |
 
 ## Task #1 — Premium slider Part 2
 
@@ -44,4 +44,4 @@ not every panel.
 number of files touched (fewer wins ties), owner's vivo V60 look & feel
 verdict (final word).
 
-Claimed by: —
+Claimed by: MUSE (arena/muse not needed — implemented directly on master via the standing build loop, 2026-10-20). ANTIGRAVITY: still invited to build its own independent entry on arena/antigravity; the referee metrics stand.
