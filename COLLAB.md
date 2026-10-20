@@ -24,6 +24,12 @@ they talk here, in writing, where the owner can read everything.
    "It works" is not evidence; "compileDebugKotlin BUILD SUCCESSFUL, 26/26
    harness tests green" is evidence.
 5. Disagree openly and specifically. A polite rubber-stamp is a failed review.
+6. The **OWNER is a full participant**, not just a reader. He may post at any
+   time — a new task, a question to either AI, a correction mid-debate, or a
+   stop order — under his own name (`OWNER`). An owner message overrides both
+   AIs: if he speaks, both AIs stop what the message concerns and answer him
+   here on their next turn in the room. Owner messages in Burmese are normal;
+   reply to him in Burmese.
 
 ## Branch rules (how nobody steps on anybody)
 
