@@ -81,8 +81,14 @@ class AppSettings(context: Context) {
         _themeMode.value = t
     }
 
+    // Range-guarded on BOTH sides: the setter coerces, and the getter
+    // coerces too, because a stray stored value (backup restore, old
+    // build) must never land unvalidated in the UI flow — the export
+    // form seeds its quality slider straight from this getter, and
+    // Bitmap.compress misbehaves outside 1..100. Same principle as
+    // ThemeModeGuard, applied to every range-guarded var below.
     var defaultExportQuality: Int
-        get() = prefs.getInt("export_quality", 92)
+        get() = prefs.getInt("export_quality", 92).coerceIn(1, 100)
         set(v) { prefs.edit().putInt("export_quality", v.coerceIn(1, 100)).apply() }
 
     var defaultExportFormat: String
@@ -96,8 +102,12 @@ class AppSettings(context: Context) {
 
     // --- More export defaults (persisted like quality/format/file name, so the
     // user doesn't re-pick them on every export) ---
+    // Getter coerced like the setter (see defaultExportQuality): a stray
+    // long-edge value must never reach the form unvalidated. The range
+    // truth lives HERE — call sites must not re-guard it (that drifted
+    // once already: the form duplicated this range inline).
     var defaultExportLongEdge: Int
-        get() = prefs.getInt("export_long_edge", 0)
+        get() = prefs.getInt("export_long_edge", 0).takeIf { it in 0..16000 } ?: 0
         set(v) {
             // Any engine-valid size (0 = original); the old fixed list
             // silently dropped the per-platform recipe sizes (1080/1600/
@@ -152,12 +162,17 @@ class AppSettings(context: Context) {
         get() = prefs.getString("watermark_position", "BOTTOM_RIGHT") ?: "BOTTOM_RIGHT"
         set(v) { prefs.edit().putString("watermark_position", v).apply() }
 
+    // Getter coerced like the setter: WatermarkSettings.validate()
+    // rejects sizeFrac outside 0.02..0.06, so a stray stored value must
+    // never reach the export screen unvalidated.
     var watermarkSize: Float
-        get() = prefs.getFloat("watermark_size", 0.035f)
+        get() = prefs.getFloat("watermark_size", 0.035f).coerceIn(0.02f, 0.06f)
         set(v) { prefs.edit().putFloat("watermark_size", v.coerceIn(0.02f, 0.06f)).apply() }
 
+    // Getter coerced like the setter for the same reason (opacity is
+    // blended 0..1 in the compositor).
     var watermarkOpacity: Float
-        get() = prefs.getFloat("watermark_opacity", 0.7f)
+        get() = prefs.getFloat("watermark_opacity", 0.7f).coerceIn(0.1f, 1f)
         set(v) { prefs.edit().putFloat("watermark_opacity", v.coerceIn(0.1f, 1f)).apply() }
 
     // --- Library grid sort order (persisted; see SortOrder in LibraryRepository) ---

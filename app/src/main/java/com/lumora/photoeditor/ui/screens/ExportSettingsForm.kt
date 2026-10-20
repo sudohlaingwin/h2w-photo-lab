@@ -62,11 +62,13 @@ class ExportFormState(container: AppContainer) {
         runCatching { ExportFormat.valueOf(settings.defaultExportFormat) }
             .getOrDefault(ExportFormat.JPEG))
     var quality by mutableStateOf(settings.defaultExportQuality.toFloat())
-    var longEdge by mutableStateOf(
-        // Engine-valid range (0 = original); the old fixed option list
-        // silently reset the per-platform recipe sizes (1080/1600/1920)
-        // to 0, so those recipes exported at full resolution.
-        settings.defaultExportLongEdge.takeIf { it in 0..16000 } ?: 0)
+    // Engine-valid range (0 = original) is owned by
+    // AppSettings.defaultExportLongEdge's guarded getter; the old fixed
+    // option list silently reset the per-platform recipe sizes
+    // (1080/1600/1920) to 0, so those recipes exported at full
+    // resolution. (An inline re-guard used to live here — removed
+    // 2026-10-20: one range, one owner, no drift.)
+    var longEdge by mutableStateOf(settings.defaultExportLongEdge)
     var keepMetadata by mutableStateOf(settings.defaultKeepMetadata)
     var embedColorProfile by mutableStateOf(settings.defaultEmbedColorProfile)
     var wmEnabled by mutableStateOf(settings.watermarkEnabled)
