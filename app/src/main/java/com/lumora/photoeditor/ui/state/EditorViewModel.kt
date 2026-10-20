@@ -1530,6 +1530,16 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         renderJob?.cancel()
         val bmp = _preview.value ?: return
         renderJob = guardLaunch(Dispatchers.Default) {
+            // Race guard (bitmap lifetime, 2026-10-21): the live preview
+            // bitmap may be recycled and replaced on the Main thread
+            // (undo removal, wavelet/retouch result swap, new photo) while
+            // this background render is mid-flight. Reading a recycled
+            // bitmap throws inside buildMaskLuminance/despilledBitmap and
+            // the frame is dropped noisily via scopeGuard. Every swap site
+            // calls requestRender() again on Main, so a fresh job for the
+            // new bitmap is always in flight — dropping the stale one here
+            // is safe and silent. bmp.isRecycled is thread-safe to call.
+            if (bmp.isRecycled || _preview.value !== bmp) return@guardLaunch
             val s = _state.value
             val vw = viewW.coerceAtLeast(1); val vh = viewH.coerceAtLeast(1)
             // In crop preview mode, ignore s.crop in the matrix so the full
