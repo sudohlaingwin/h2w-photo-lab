@@ -1,6 +1,7 @@
 package com.lumora.photoeditor.engine
 
 import java.nio.ByteBuffer
+import kotlin.math.roundToInt
 
 /**
  * Luma waveform monitor data: the per-column luminance envelope of the live
@@ -55,14 +56,16 @@ fun waveformFromRgba(buf: ByteBuffer, w: Int, h: Int): Waveform {
             val r = buf.get(o).toInt() and 0xFF
             val g = buf.get(o + 1).toInt() and 0xFF
             val b = buf.get(o + 2).toInt() and 0xFF
-            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).toInt().coerceIn(0, 255)
+            // Round-half-up (not truncation) for both the per-pixel luma
+            // and the column mean: truncation biases scope readouts dark.
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).roundToInt().coerceIn(0, 255)
             if (lum < mins[c]) mins[c] = lum
             if (lum > maxs[c]) maxs[c] = lum
             sum += lum
             n++
             y += rowStep
         }
-        means[c] = if (n > 0) (sum / n).toInt() else 0
+        means[c] = if (n > 0) ((sum + n / 2) / n).toInt() else 0
     }
     return Waveform(mins, maxs, means)
 }

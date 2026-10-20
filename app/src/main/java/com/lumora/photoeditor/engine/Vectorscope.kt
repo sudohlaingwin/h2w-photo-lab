@@ -38,9 +38,11 @@ data class Vectorscope(
         val idx = gy * GRID + gx
         val n = counts[idx]
         if (n <= 0) return 0
-        val r = (rSum[idx] / n).toInt().coerceIn(0, 255)
-        val g = (gSum[idx] / n).toInt().coerceIn(0, 255)
-        val b = (bSum[idx] / n).toInt().coerceIn(0, 255)
+        // Round-half-up integer averaging (not truncation): plain (sum/n)
+        // biases the cell color up to ~1 level dark per channel.
+        val r = ((rSum[idx] + n / 2) / n).toInt().coerceIn(0, 255)
+        val g = ((gSum[idx] + n / 2) / n).toInt().coerceIn(0, 255)
+        val b = ((bSum[idx] + n / 2) / n).toInt().coerceIn(0, 255)
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
 }

@@ -3,6 +3,7 @@ package com.lumora.photoeditor.engine
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -127,7 +128,9 @@ object AiProRetouch {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             sumR += r; sumG += g; sumB += b
-            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).toInt().coerceIn(0, 255)
+            // Round-half-up (not truncation): this histogram drives the
+            // image-adaptive grade weights; truncation biases it ~0.5 dark.
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).roundToInt().coerceIn(0, 255)
             hist[lum]++
             val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
             val sat = if (mx > 0) (mx - mn).toFloat() / mx else 0f

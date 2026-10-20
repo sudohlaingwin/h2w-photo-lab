@@ -340,10 +340,15 @@ object HdrMerge {
                     n++
                 }
                 val nn = max(1, n)
+                // Round-half-up integer averaging: plain (r/nn) truncates the
+                // box average up to ~1 level dark per channel, and these
+                // downsampled frames feed the pyramid blend, so the bias lands
+                // in the final merged output (same defect class as the
+                // engine-wide float->byte truncation sweep).
                 out[y * dw + x] = (0xFF shl 24) or
-                    ((r / nn).toInt().coerceIn(0, 255) shl 16) or
-                    ((g / nn).toInt().coerceIn(0, 255) shl 8) or
-                    (b / nn).toInt().coerceIn(0, 255)
+                    (((r + nn / 2) / nn).toInt().coerceIn(0, 255) shl 16) or
+                    (((g + nn / 2) / nn).toInt().coerceIn(0, 255) shl 8) or
+                    ((b + nn / 2) / nn).toInt().coerceIn(0, 255)
             }
         }
         return out

@@ -82,7 +82,9 @@ object AutoEnhanceCore {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             sumR += r; sumG += g; sumB += b
-            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).toInt().coerceIn(0, 255)
+            // Round-half-up (not truncation): the histogram feeds exposure
+            // decisions, and truncation biases every pixel's bin ~0.5 dark.
+            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b).roundToInt().coerceIn(0, 255)
             hist[lum]++
             // Saturation (0..1): max-min over max
             val mx = maxOf(r, g, b); val mn = minOf(r, g, b)

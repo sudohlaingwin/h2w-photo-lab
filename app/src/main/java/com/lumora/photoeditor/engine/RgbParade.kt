@@ -85,7 +85,9 @@ fun rgbParadeFromRgba(buf: ByteBuffer, w: Int, h: Int): RgbParade {
             n++
             y += rowStep
         }
-        for (k in 0..2) means[k][c] = if (n > 0) (sums[k][c] / n).toInt() else 0
+        // Round-half-up integer averaging (not truncation): plain (sum/n)
+        // biases the column mean up to ~1 level dark per channel.
+        for (k in 0..2) means[k][c] = if (n > 0) ((sums[k][c] + n / 2) / n).toInt() else 0
     }
     return RgbParade(mins, maxs, means)
 }
