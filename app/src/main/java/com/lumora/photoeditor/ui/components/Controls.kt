@@ -1887,16 +1887,21 @@ fun LumoraIconButton(
     iconSize: Dp = 24.dp,
     minTouchTarget: Boolean = true,
 ) {
+    val buttonModifier = if (minTouchTarget)
+        modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+    else modifier
     IconButton(
         onClick = onClick,
-        modifier = if (minTouchTarget)
-            modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-        else modifier,
+        modifier = buttonModifier.semantics {
+            // Announce on the button node (matches the KDoc above); the glyph
+            // itself is decorative, so it carries no description.
+            contentDescription?.let { this.contentDescription = it }
+        },
         enabled = enabled,
     ) {
         Icon(
             icon,
-            contentDescription = contentDescription,
+            contentDescription = null,
             tint = if (enabled) tint else Lumora.colors.textTertiary,
             modifier = Modifier.size(iconSize),
         )
