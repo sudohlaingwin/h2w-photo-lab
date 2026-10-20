@@ -852,6 +852,14 @@ fun CollapsibleSection(
                         onClick(label = title) { expanded = !expanded; true }
                     }
                     .clickable { expanded = !expanded }
+                    // Accessibility (2026-10-20): the section header is the
+                    // primary expand/collapse control of every editing panel
+                    // — the 12sp title + 20dp padding was only ~36dp tall,
+                    // under the 48dp minimum touch target. The min-size wraps
+                    // the padding, so the tappable box is 48dp tall without
+                    // changing the header's look (same pattern as the
+                    // BrushQuickBar Add/Erase fix).
+                    .defaultMinSize(minHeight = 48.dp)
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

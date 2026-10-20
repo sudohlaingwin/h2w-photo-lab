@@ -2043,6 +2043,11 @@ private fun HistoryRow(
                 onClickLabel = "Restore ${entry.label}",
                 onClick = onRestore,
             )
+            // Accessibility (2026-10-20): single-line history rows were
+            // ~41dp tall (14sp label + 20dp padding), under the 48dp minimum
+            // touch target. Min-size wraps the padding — tappable box meets
+            // the minimum with no visual change.
+            .defaultMinSize(minHeight = 48.dp)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

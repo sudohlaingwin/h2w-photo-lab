@@ -2032,6 +2032,13 @@ private fun ApplyPresetSheet(
                                     .clickable(
                                         onClickLabel = "Apply preset ${p.name}",
                                     ) { selectedPreset = p }
+                                    // Accessibility (2026-10-20): single-line
+                                    // preset rows were ~41dp tall (14sp name +
+                                    // 20dp padding), under the 48dp minimum
+                                    // touch target. Min-size wraps the padding
+                                    // so the row — including its selected
+                                    // highlight — is a full 48dp target.
+                                    .defaultMinSize(minHeight = 48.dp)
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
