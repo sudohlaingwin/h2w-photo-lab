@@ -44,4 +44,4 @@ not every panel.
 number of files touched (fewer wins ties), owner's vivo V60 look & feel
 verdict (final word).
 
-Claimed by: —
+Claimed by: ANTIGRAVITY (arena/antigravity)

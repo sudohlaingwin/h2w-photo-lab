@@ -11,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -36,6 +38,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -135,6 +138,7 @@ fun LumoraSlider(
     onEnd: () -> Unit = {},
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    gradient: Brush? = null,
 ) {
     val colors = Lumora.colors
     val type = Lumora.type
@@ -254,6 +258,7 @@ fun LumoraSlider(
                 )
             }
         }
+        Spacer(Modifier.height(4.dp))
         Slider(
             value = value,
             onValueChange = {
@@ -288,63 +293,324 @@ fun LumoraSlider(
                 activeTrackColor = if (value == default) colors.textTertiary else colors.accent,
                 inactiveTrackColor = colors.divider,
             ),
-            thumb = lumoraSliderThumb(dragging),
-            track = lumoraSliderTrack(valueRange, isDefault = value == default),
+            thumb = lumoraSliderThumb(dragging, bubbleText = spokenValue),
+            track = lumoraSliderTrack(
+                valueRange = valueRange,
+                isDefault = value == default,
+                default = default,
+                label = label,
+                customGradient = gradient,
+            ),
         )
     }
 }
 
 /**
- * Signature Lumora slider thumb: a white dot with a hairline dark ring that
- * grows while dragged. Shared by [LumoraSlider] and [LumoraCompactSlider] so
- * every slider in the app renders identically.
+ * Signature Lumora slider thumb with live drag value bubble:
+ * - Sleek white circle with dark hairline contrast ring and soft glow halo during drag.
+ * - Floating value bubble (pill with downward pointer arrow) displaying the live percentage
+ *   readout above the thumb while dragging (Arena Task #1).
+ * - Edge-aware horizontal clamping so the bubble never clips against screen margins.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-private fun lumoraSliderThumb(dragging: Boolean): @Composable (androidx.compose.material3.SliderState) -> Unit = {
-    Canvas(modifier = Modifier.size(if (dragging) 20.dp else 14.dp)) {
-        drawCircle(Color.White, radius = size.minDimension / 2)
-        drawCircle(
-            Color(0x33000000), radius = size.minDimension / 2,
-            style = Stroke(1.dp.toPx()),
+private fun lumoraSliderThumb(
+    dragging: Boolean,
+    bubbleText: String? = null,
+): @Composable (SliderState) -> Unit = { sliderState ->
+    val colors = Lumora.colors
+    val type = Lumora.type
+
+    val animatedRadius by animateFloatAsState(
+        targetValue = if (dragging) 10f else 7f,
+        animationSpec = tween(120),
+        label = "thumbRadius",
+    )
+    val animatedHaloAlpha by animateFloatAsState(
+        targetValue = if (dragging) 0.35f else 0f,
+        animationSpec = tween(150),
+        label = "thumbHalo",
+    )
+
+    Box(
+        modifier = Modifier.wrapContentSize(align = Alignment.Center, unbounded = true),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Value bubble floating above thumb while dragging
+        if (bubbleText != null) {
+            val rangeSpan = sliderState.valueRange.endInclusive - sliderState.valueRange.start
+            val frac = if (rangeSpan > 0f) {
+                ((sliderState.value - sliderState.valueRange.start) / rangeSpan).coerceIn(0f, 1f)
+            } else 0.5f
+
+            // Clamp / nudge offset so bubble stays within screen margins at track ends
+            val nudgeX = when {
+                frac < 0.12f -> ((0.12f - frac) * 75f).dp
+                frac > 0.88f -> ((0.88f - frac) * 75f).dp
+                else -> 0.dp
+            }
+
+            AnimatedVisibility(
+                visible = dragging,
+                enter = fadeIn(tween(120)) + scaleIn(tween(140), initialScale = 0.8f),
+                exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.8f),
+                modifier = Modifier.offset(x = nudgeX, y = (-38).dp),
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colors.panelElevated,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.7f)),
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = bubbleText,
+                                style = type.controlValue.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = Color.White,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    // Downward pointer arrow pointing directly toward thumb
+                    Canvas(modifier = Modifier.size(width = 8.dp, height = 4.dp)) {
+                        val path = Path().apply {
+                            moveTo(0f, 0f)
+                            lineTo(size.width, 0f)
+                            lineTo(size.width / 2f, size.height)
+                            close()
+                        }
+                        drawPath(path, color = colors.accent.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+
+        // Thumb circle with hairline border and drag halo
+        Canvas(modifier = Modifier.size((animatedRadius * 2).dp)) {
+            val r = size.minDimension / 2f
+            if (animatedHaloAlpha > 0.01f) {
+                drawCircle(
+                    color = colors.accent.copy(alpha = animatedHaloAlpha),
+                    radius = r + 4.dp.toPx(),
+                )
+            }
+            drawCircle(Color.White, radius = r)
+            drawCircle(
+                color = Color(0x33000000),
+                radius = r,
+                style = Stroke(1.dp.toPx()),
+            )
+        }
+    }
+}
+
+/**
+ * Returns true if [label] represents a color-centric parameter where the full
+ * background track should display a soft preview gradient (e.g. Temperature, Tint, Hue).
+ */
+private fun isColorMeaningfulParam(label: String): Boolean {
+    val key = label.trim().lowercase(Locale.ROOT)
+    return key.contains("temperature") || key == "temp" ||
+        key.contains("tint") ||
+        key.contains("hue") ||
+        key.contains("saturation") || key.contains("vibrance") ||
+        key.contains("color")
+}
+
+/**
+ * Resolves a meaningful color gradient reflecting the parameter's visual effect:
+ * - Temperature: Cool Sky Blue -> Neutral Slate -> Warm Amber Orange
+ * - Tint: Fresh Green -> Neutral Slate -> Vivid Magenta
+ * - Hue: Full 360-degree color spectrum
+ * - Exposure / Highlights / Whites: Deep Shadow -> Midtone -> Pure White
+ * - Shadows / Blacks: Inky Black -> Soft Shadow Slate
+ * - Contrast: Flat Muted Gray -> High Dynamic Punch
+ * - Saturation / Vibrance: Desaturated Monochrome -> Vivid Radiant Coral
+ * - Clarity / Texture / Dehaze / Sharpen: Precision Cyan -> Radiant Amber
+ * - Fallback: Signature Lumora warm amber-gold gradient
+ */
+fun semanticTrackBrush(
+    label: String,
+    accent: Color,
+    neutralDivider: Color,
+): Brush {
+    val key = label.trim().lowercase(Locale.ROOT)
+    return when {
+        key.contains("temperature") || key == "temp" -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF2563EB), // Cool Blue
+                Color(0xFF60A5FA), // Light Blue
+                Color(0xFF94A3B8), // Neutral mid
+                Color(0xFFFBBF24), // Warm Yellow
+                Color(0xFFEA580C), // Deep Orange
+            )
+        )
+        key.contains("tint") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF16A34A), // Emerald Green
+                Color(0xFF86EFAC), // Soft Green
+                Color(0xFF94A3B8), // Neutral mid
+                Color(0xFFF472B6), // Soft Pink
+                Color(0xFFC026D3), // Deep Magenta
+            )
+        )
+        key.contains("hue") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFFFF0000), // Red
+                Color(0xFFFFFF00), // Yellow
+                Color(0xFF00FF00), // Green
+                Color(0xFF00FFFF), // Cyan
+                Color(0xFF0000FF), // Blue
+                Color(0xFFFF00FF), // Magenta
+                Color(0xFFFF0000), // Red wrap
+            )
+        )
+        key.contains("exposure") || key.contains("highlight") || key.contains("white") ||
+            key.contains("bright") || key.contains("luminance") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF1E293B), // Deep Shadow Slate
+                Color(0xFF64748B), // Midtone
+                Color(0xFFE2E8F0), // Highlight
+                Color(0xFFFFFFFF), // Pure White
+            )
+        )
+        key.contains("shadow") || key.contains("black") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF0F172A), // Inky Black
+                Color(0xFF334155), // Dark Slate
+                Color(0xFF94A3B8), // Lifted Shadow
+            )
+        )
+        key.contains("contrast") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF475569), // Flat Gray
+                Color(0xFF94A3B8), // Mid
+                Color(0xFFF1F5F9), // Dynamic White
+            )
+        )
+        key.contains("saturation") || key.contains("vibrance") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF64748B), // Desaturated Gray
+                Color(0xFFFB7185), // Soft Coral
+                Color(0xFFE11D48), // Vivid Rose
+            )
+        )
+        key.contains("clarity") || key.contains("texture") || key.contains("dehaze") ||
+            key.contains("sharpen") || key.contains("deconv") || key.contains("detail") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF0D9488), // Deep Teal
+                Color(0xFF2DD4BF), // Crisp Cyan
+                accent,            // Warm Amber Accent
+            )
+        )
+        key.contains("vignette") || key.contains("defringe") -> Brush.horizontalGradient(
+            listOf(
+                Color(0xFF0F172A),
+                Color(0xFF64748B),
+                Color(0xFFE2E8F0),
+            )
+        )
+        else -> Brush.horizontalGradient(
+            listOf(
+                accent.copy(alpha = 0.5f),
+                accent,
+                Color(0xFFFFD54F), // Luminous Gold
+            )
         )
     }
 }
 
 /**
- * Signature Lumora slider track: a 4dp rounded bar that renders neutral
- * ([LumoraColors.textTertiary]) at the default value and warm-amber accent
- * once adjusted, with a zero marker for bipolar ranges.
+ * Premium Lumora slider track (Arena Task #1):
+ * - Gradient-filled track meaningfully reflecting the parameter (e.g. Temperature blue->orange, Tint green->magenta).
+ * - Subtly recessed background track (with soft preview gradient for color parameters).
+ * - Clean zero-point caliper notch for bipolar ranges.
+ * - Active segment radiating from zero/default to thumb position with full vibrant gradient fill.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 private fun lumoraSliderTrack(
     valueRange: ClosedFloatingPointRange<Float>,
     isDefault: Boolean,
+    default: Float = 0f,
+    label: String = "",
+    customGradient: Brush? = null,
 ): @Composable (SliderState) -> Unit = { sliderState ->
     val colors = Lumora.colors
-    val frac = (sliderState.value - valueRange.start) /
-        (valueRange.endInclusive - valueRange.start)
-    Canvas(modifier = Modifier.fillMaxWidth().height(4.dp)) {
-        val y = size.height / 2
-        drawLine(
-            colors.divider, Offset(0f, y), Offset(size.width, y),
-            strokeWidth = size.height, cap = StrokeCap.Round,
-        )
-        // zero marker for bipolar ranges
-        if (valueRange.start < 0f && valueRange.endInclusive > 0f) {
-            val zx = size.width * (-valueRange.start) /
-                (valueRange.endInclusive - valueRange.start)
+    val rangeSpan = (valueRange.endInclusive - valueRange.start).coerceAtLeast(1e-4f)
+    val frac = ((sliderState.value - valueRange.start) / rangeSpan).coerceIn(0f, 1f)
+    val isBipolar = valueRange.start < default && valueRange.endInclusive > default
+    val defaultFrac = if (isBipolar) {
+        ((default - valueRange.start) / rangeSpan).coerceIn(0f, 1f)
+    } else 0f
+
+    val gradientBrush = customGradient ?: semanticTrackBrush(
+        label = label,
+        accent = colors.accent,
+        neutralDivider = colors.divider,
+    )
+
+    Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
+        val y = size.height / 2f
+        val trackHeight = 5.dp.toPx()
+
+        // 1. Background / Inactive Track
+        if (isColorMeaningfulParam(label)) {
             drawLine(
-                colors.textTertiary.copy(alpha = 0.6f),
-                Offset(zx, y - 5.dp.toPx()), Offset(zx, y + 5.dp.toPx()),
-                strokeWidth = 1.5.dp.toPx(),
+                brush = gradientBrush,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = trackHeight,
+                cap = StrokeCap.Round,
+                alpha = 0.38f,
+            )
+        } else {
+            drawLine(
+                color = colors.divider.copy(alpha = 0.55f),
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = trackHeight,
+                cap = StrokeCap.Round,
             )
         }
-        val activeColor = if (isDefault) colors.textTertiary else colors.accent
-        val endX = size.width * frac
-        drawLine(
-            activeColor, Offset(0f, y), Offset(endX, y),
-            strokeWidth = size.height, cap = StrokeCap.Round,
-        )
+
+        // 2. Zero-tick marker for bipolar ranges
+        val zx = size.width * defaultFrac
+        if (isBipolar) {
+            val tickHalfHeight = 7.dp.toPx()
+            drawLine(
+                color = if (isDefault) colors.textTertiary.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.85f),
+                start = Offset(zx, y - tickHalfHeight),
+                end = Offset(zx, y + tickHalfHeight),
+                strokeWidth = 2.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+
+        // 3. Active Track Segment
+        if (!isDefault) {
+            val cx = size.width * frac
+            val startX = if (isBipolar) minOf(zx, cx) else 0f
+            val endX = if (isBipolar) maxOf(zx, cx) else cx
+
+            if (kotlin.math.abs(endX - startX) > 1f) {
+                drawLine(
+                    brush = gradientBrush,
+                    start = Offset(startX, y),
+                    end = Offset(endX, y),
+                    strokeWidth = trackHeight + 0.5.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    alpha = 1.0f,
+                )
+            }
+        }
     }
 }
 
@@ -372,6 +638,8 @@ fun LumoraCompactSlider(
     val colors = Lumora.colors
     var dragging by remember { mutableStateOf(false) }
     val resettable = value != default
+    val compactSpokenValue = formatPercent(value, valueRange, default)
+
     Slider(
         value = value,
         onValueChange = {
@@ -399,8 +667,13 @@ fun LumoraCompactSlider(
             activeTrackColor = if (resettable) colors.accent else colors.textTertiary,
             inactiveTrackColor = colors.divider,
         ),
-        thumb = lumoraSliderThumb(dragging),
-        track = lumoraSliderTrack(valueRange, isDefault = !resettable),
+        thumb = lumoraSliderThumb(dragging, bubbleText = compactSpokenValue),
+        track = lumoraSliderTrack(
+            valueRange = valueRange,
+            isDefault = !resettable,
+            default = default,
+            label = description,
+        ),
     )
 }
 
