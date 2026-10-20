@@ -75,11 +75,7 @@ class GeminiClient {
                     ?: return@withContext Result.Failure("Empty response from Gemini")
 
                 val suggestions = try {
-                    // The model may wrap JSON in markdown fences; strip them.
-                    val cleaned = text.trim()
-                        .removePrefix("```json").removePrefix("```")
-                        .removeSuffix("```").trim()
-                    json.decodeFromString(AiSuggestions.serializer(), cleaned)
+                    json.decodeFromString(AiSuggestions.serializer(), stripCodeFences(text))
                 } catch (e: Exception) {
                     return@withContext Result.Failure(
                         "Could not parse AI suggestions: ${e.message?.take(120)}",
@@ -97,8 +93,10 @@ class GeminiClient {
      * outputs); reading only parts.first() truncated the suggestions JSON
      * and surfaced as "Could not parse AI suggestions" (2026-10-18).
      * Single-part replies behave exactly as before.
+     *
+     * Internal (not private) so GeminiClientTest can execute the contract.
      */
-    private fun responseTextOf(response: GeminiResponse): String? =
+    internal fun responseTextOf(response: GeminiResponse): String? =
         response.candidates.firstNotNullOfOrNull { it.content }
             ?.parts?.mapNotNull { it.text }
             ?.takeIf { it.isNotEmpty() }
@@ -323,3 +321,14 @@ Respond with ONLY a JSON object matching this schema (no markdown, no extra text
         internal const val NO_HTTP_RESPONSE = -1
     }
 }
+
+/**
+ * Strips markdown code fences the model sometimes wraps its suggestions JSON
+ * in. Pure contract extracted verbatim from the inline pipeline in
+ * [GeminiClient.analyzePhoto] for executed verification (GeminiClientTest);
+ * behavior is identical to the pipeline it replaced.
+ */
+internal fun stripCodeFences(text: String): String =
+    text.trim()
+        .removePrefix("```json").removePrefix("```")
+        .removeSuffix("```").trim()
