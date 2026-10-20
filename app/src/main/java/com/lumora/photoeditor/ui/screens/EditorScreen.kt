@@ -1411,6 +1411,13 @@ private fun BrushQuickBar(
                                 onClick(label = "$label brush") { onOpSwitch?.invoke(erase); true }
                             }
                             .clickable { onOpSwitch?.invoke(erase) }
+                            // Accessibility (2026-10-20): this is a primary
+                            // mid-stroke control — the label + 8dp padding was
+                            // only ~32dp tall, under the 48dp minimum touch
+                            // target. The min-size wraps the padding, so the
+                            // tappable box is 48dp tall without changing the
+                            // label's look.
+                            .defaultMinSize(minHeight = 48.dp)
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
