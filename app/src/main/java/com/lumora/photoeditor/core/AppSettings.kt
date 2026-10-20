@@ -65,13 +65,18 @@ class AppSettings(context: Context) {
     private val _haptics = MutableStateFlow(prefs.getBoolean("haptics", true))
     val haptics: StateFlow<Boolean> = _haptics.asStateFlow()
 
-    /** 0 = system, 1 = dark, 2 = light */
-    private val _themeMode = MutableStateFlow(prefs.getInt("theme_mode", 0))
+    /** 0 = system, 1 = dark, 2 = light — range-guarded like every
+     *  sibling setting: a stray pref value (backup restore, old build) must
+     *  never land unvalidated in the flow, or the Settings selector would
+     *  show no selection and the MainActivity theme `when` would silently
+     *  fall through to system default. */
+    private val _themeMode = MutableStateFlow(prefs.getInt("theme_mode", 0).coerceIn(0, 2))
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
     fun setThemeMode(v: Int) {
-        prefs.edit().putInt("theme_mode", v.coerceIn(0, 2)).apply()
-        _themeMode.value = v
+        val t = v.coerceIn(0, 2)
+        prefs.edit().putInt("theme_mode", t).apply()
+        _themeMode.value = t
     }
 
     var defaultExportQuality: Int
