@@ -34,6 +34,7 @@ import com.lumora.photoeditor.ui.state.AiUiState
 import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
+import kotlin.math.roundToInt
 
 sealed interface PaintRequest {
     data class Brush(val maskId: String, val compId: String, val erase: Boolean) : PaintRequest
@@ -670,8 +671,8 @@ private fun MaskEditor(
                 com.lumora.photoeditor.ui.components.BrushPreview(
                     diameter = brushSize, feather = brushFeather)
                 Text(
-                    "${(brushSize * 100).toInt()}% of photo width • " +
-                        "${(brushFeather * 100).toInt()}% feather",
+                    "${(brushSize * 100).roundToInt()}% of photo width • " +
+                        "${(brushFeather * 100).roundToInt()}% feather",
                     style = type.caption, color = colors.textTertiary)
             }
             // Brush defaults mirror EditorScreen's initial brush state

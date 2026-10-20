@@ -25,6 +25,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
+import kotlin.math.roundToInt
 
 data class Histogram(
     val r: IntArray, val g: IntArray, val b: IntArray, val lum: IntArray,
@@ -3585,7 +3586,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         autoBaseline = base
                         _aiProRetouchApplied.value = true
                     }
-                    val pct = (blend.strength * 100).toInt()
+                    val pct = (blend.strength * 100).roundToInt()
                     val wbNote = if (blend.wbGains != null) " + white balance" else ""
                     onDone(AiProRetouchOutcome.Applied("${blend.sceneName} grade · $pct%$wbNote"))
                 }

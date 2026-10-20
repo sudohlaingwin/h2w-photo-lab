@@ -91,8 +91,8 @@ fun BrushPreview(
     maxDiameter: Float = 0.4f,
 ) {
     val colors = Lumora.colors
-    val desc = "Brush preview: ${(diameter * 100).toInt()} percent of photo " +
-        "width, ${(feather * 100).toInt()} percent feather"
+    val desc = "Brush preview: ${(diameter * 100).roundToInt()} percent of photo " +
+        "width, ${(feather * 100).roundToInt()} percent feather"
     Canvas(
         modifier = modifier
             .size(boxSize)

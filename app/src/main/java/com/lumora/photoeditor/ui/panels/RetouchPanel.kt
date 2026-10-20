@@ -20,6 +20,7 @@ import com.lumora.photoeditor.ui.components.LumoraSlider
 import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
+import kotlin.math.roundToInt
 
 @Composable
 fun RetouchPanel(
@@ -161,7 +162,7 @@ fun RetouchPanel(
                 },
                 valueRange = 0f..1f,
                 default = aiChosenStrength,
-                valueText = "${(aiStrength * 100).toInt()}%",
+                valueText = "${(aiStrength * 100).roundToInt()}%",
                 onBegin = { vm.beginGesture() },
                 onEnd = { vm.endGesture("AI Pro Retouch intensity") },
             )
@@ -324,7 +325,7 @@ fun RetouchPanel(
                 onValueChange = { waveletTextureKeep = it },
                 valueRange = 0f..1f,
                 default = 1f,
-                valueText = "${(waveletTextureKeep * 100).toInt()}%",
+                valueText = "${(waveletTextureKeep * 100).roundToInt()}%",
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
                 label = "Blemish smooth",
@@ -332,7 +333,7 @@ fun RetouchPanel(
                 onValueChange = { blemishSmooth = it },
                 valueRange = 0f..1f,
                 default = 0.6f,
-                valueText = "${(blemishSmooth * 100).toInt()}%",
+                valueText = "${(blemishSmooth * 100).roundToInt()}%",
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
                 label = "Tone even",
@@ -340,7 +341,7 @@ fun RetouchPanel(
                 onValueChange = { toneEven = it },
                 valueRange = 0f..1f,
                 default = 0.3f,
-                valueText = "${(toneEven * 100).toInt()}%",
+                valueText = "${(toneEven * 100).roundToInt()}%",
             )
             LumoraButton(
                 onClick = {
@@ -438,8 +439,8 @@ fun RetouchPanel(
                     Text("Brush footprint", style = Lumora.type.controlLabel,
                         color = Lumora.colors.textSecondary)
                     Text(
-                        "${(size * 100).toInt()}% of photo width • " +
-                            "${(feather * 100).toInt()}% feather",
+                        "${(size * 100).roundToInt()}% of photo width • " +
+                            "${(feather * 100).roundToInt()}% feather",
                         style = Lumora.type.caption,
                         color = Lumora.colors.textTertiary,
                     )
@@ -457,7 +458,7 @@ fun RetouchPanel(
                 valueRange = 0.01f..0.3f,
                 onValueChange = onSize,
                 default = 0.06f,
-                valueText = "${(size * 100).toInt()}%",
+                valueText = "${(size * 100).roundToInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
@@ -466,7 +467,7 @@ fun RetouchPanel(
                 valueRange = 0.05f..1f,
                 onValueChange = onFeather,
                 default = 0.6f,
-                valueText = "${(feather * 100).toInt()}%",
+                valueText = "${(feather * 100).roundToInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
             com.lumora.photoeditor.ui.components.LumoraSlider(
@@ -475,7 +476,7 @@ fun RetouchPanel(
                 valueRange = 0f..1f,
                 onValueChange = onStrength,
                 default = 1f,
-                valueText = "${(strength * 100).toInt()}%",
+                valueText = "${(strength * 100).roundToInt()}%",
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
             if (tool == RetouchOp.SMOOTH_SKIN) {
@@ -489,7 +490,7 @@ fun RetouchPanel(
                     valueRange = 0f..1f,
                     default = 0.45f,
                     onValueChange = onTextureKeep,
-                    valueText = "${(textureKeep * 100).toInt()}%",
+                    valueText = "${(textureKeep * 100).roundToInt()}%",
                     modifier = Modifier.padding(horizontal = 0.dp),
                 )
                 Text(
@@ -570,7 +571,7 @@ fun RetouchPanel(
                         valueRange = 0f..1f,
                         default = 0.5f,
                         onValueChange = { onCloneSource(src.copy(x = it)) },
-                        valueText = "${(src.x * 100).toInt()}%",
+                        valueText = "${(src.x * 100).roundToInt()}%",
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                     com.lumora.photoeditor.ui.components.LumoraSlider(
@@ -579,7 +580,7 @@ fun RetouchPanel(
                         valueRange = 0f..1f,
                         default = 0.5f,
                         onValueChange = { onCloneSource(src.copy(y = it)) },
-                        valueText = "${(src.y * 100).toInt()}%",
+                        valueText = "${(src.y * 100).roundToInt()}%",
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }

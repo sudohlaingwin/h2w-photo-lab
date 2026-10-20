@@ -35,6 +35,7 @@ import com.lumora.photoeditor.ui.components.LumoraTextButton
 import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
+import kotlin.math.roundToInt
 
 private fun hueColor(range: HueRange): Color {
     val rgb = ImageMath.hsl2rgb(range.centerDeg / 360f, 0.75f, 0.55f)
@@ -279,7 +280,7 @@ fun ColorPanel(
                     },
                     valueRange = 0f..1f,
                     default = 1f,
-                    valueText = "${(strength * 100).toInt()}%",
+                    valueText = "${(strength * 100).roundToInt()}%",
                     onBegin = { vm.beginGesture() },
                     onEnd = { vm.endGesture("Look transfer strength") },
                 )

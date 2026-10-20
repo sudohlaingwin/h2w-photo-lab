@@ -1,5 +1,7 @@
 package com.lumora.photoeditor.engine
 
+import kotlin.math.roundToInt
+
 /**
  * Pure trip policy for the editor's black-frame watchdog (P0, 2026-10-17).
  *
@@ -65,7 +67,7 @@ object WatchdogPolicy {
     /** Diagnostic bundle for the null-preview trip; same log shape as [diagnostic]. */
     fun nullPreviewDiagnostic(frameMeanLuma: Float): String =
         "no software preview bitmap for the open photo; " +
-            "GPU frame ${(frameMeanLuma * 100).toInt()}% over $TRIP_STREAK reads"
+            "GPU frame ${(frameMeanLuma * 100).roundToInt()}% over $TRIP_STREAK reads"
 
     /** The diagnostic bundle attached to a trip; same shape as the P0 fix logged. */
     fun diagnostic(
@@ -77,8 +79,8 @@ object WatchdogPolicy {
         overlayIdx: Int,
         maskView: Int,
     ): String =
-        "black frame ${(frameMeanLuma * 100).toInt()}% over $TRIP_STREAK reads; " +
-            "source ${(sourceLuma * 100).toInt()}%; ev=$exposureEv; " +
+        "black frame ${(frameMeanLuma * 100).roundToInt()}% over $TRIP_STREAK reads; " +
+            "source ${(sourceLuma * 100).roundToInt()}%; ev=$exposureEv; " +
             "aiGrade=$aiEnabled@${"%.2f".format(aiStrength)}; " +
             "overlay=$overlayIdx; maskView=$maskView"
 

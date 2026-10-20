@@ -390,7 +390,7 @@ private fun ExportResult(
 /** Phase-aware progress label, derived from ExportManager's known bands. */
 private fun exportPhaseLabel(p: Float): String = when {
     p < 0.08f -> "Decoding photo…"
-    p < 0.78f -> "Rendering edits… ${(p * 100).toInt()}%"
+    p < 0.78f -> "Rendering edits… ${(p * 100).roundToInt()}%"
     p < 0.92f -> "Encoding…"
     else -> "Saving to gallery…"
 }
