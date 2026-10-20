@@ -425,39 +425,56 @@ private fun AiKeySettings(container: AppContainer) {
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        backupMsg = try {
-            val key = keyStore.getGeminiKey()
-            if (key == null) {
-                "No key saved to back up"
-            } else {
-                context.contentResolver.openOutputStream(uri)?.use {
-                    it.write(key.toByteArray(Charsets.UTF_8))
-                } ?: throw IllegalStateException("Could not open file")
-                "Key backed up — keep the file private."
+        // DocumentProvider + prefs I/O must not run on the main thread: a
+        // slow provider would freeze the settings screen mid-tap.
+        scope.launch {
+            backupMsg = withContext(Dispatchers.IO) {
+                try {
+                    val key = keyStore.getGeminiKey()
+                    if (key == null) {
+                        "No key saved to back up"
+                    } else {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(key.toByteArray(Charsets.UTF_8))
+                        } ?: throw IllegalStateException("Could not open file")
+                        "Key backed up — keep the file private."
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    "Backup failed: ${e.message?.take(80)}"
+                }
             }
-        } catch (e: Exception) {
-            "Backup failed: ${e.message?.take(80)}"
         }
     }
     val restoreLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        backupMsg = try {
-            val text = context.contentResolver.openInputStream(uri)
-                ?.bufferedReader()?.readText().orEmpty()
-            val key = text.lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-            if (key.isBlank()) {
-                "That file has no key in it"
-            } else {
-                keyStore.setGeminiKey(key)
+        scope.launch {
+            // Read + parse + store on IO; the (message, key) pair comes back
+            // to Main, where the UI state writes below run.
+            val (message, restoredKey) = withContext(Dispatchers.IO) {
+                try {
+                    val text = context.contentResolver.openInputStream(uri)
+                        ?.bufferedReader()?.readText().orEmpty()
+                    val key = text.lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+                    if (key.isBlank()) {
+                        "That file has no key in it" to null
+                    } else {
+                        keyStore.setGeminiKey(key)
+                        "Key restored — tap Test Connection to verify." to key
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    "Restore failed: ${e.message?.take(80)}" to null
+                }
+            }
+            if (restoredKey != null) {
                 keyInput = ""
                 hasKey = true
                 testResult = null
-                "Key restored — tap Test Connection to verify."
             }
-        } catch (e: Exception) {
-            "Restore failed: ${e.message?.take(80)}"
+            backupMsg = message
         }
     }
 
