@@ -323,11 +323,14 @@ open class GlEngine {
         val g = state.light.greenCurve.toLut(256)
         val b = state.light.blueCurve.toLut(256)
         val buf = ByteBuffer.allocateDirect(256 * 4).order(ByteOrder.nativeOrder())
+        // Round-half-up when quantizing to 8 bit (same as uploadAiLut /
+        // uploadLookLut): truncation darkens every curve lookup by up to 1
+        // level (harness: lifted curve max |err| 0.95 lv old vs 0.45 lv new).
         for (i in 0 until 256) {
-            buf.put((master[i] * 255f).toInt().coerceIn(0, 255).toByte())
-            buf.put((r[i] * 255f).toInt().coerceIn(0, 255).toByte())
-            buf.put((g[i] * 255f).toInt().coerceIn(0, 255).toByte())
-            buf.put((b[i] * 255f).toInt().coerceIn(0, 255).toByte())
+            buf.put((master[i] * 255f + 0.5f).toInt().coerceIn(0, 255).toByte())
+            buf.put((r[i] * 255f + 0.5f).toInt().coerceIn(0, 255).toByte())
+            buf.put((g[i] * 255f + 0.5f).toInt().coerceIn(0, 255).toByte())
+            buf.put((b[i] * 255f + 0.5f).toInt().coerceIn(0, 255).toByte())
         }
         buf.position(0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, curvesTex)
