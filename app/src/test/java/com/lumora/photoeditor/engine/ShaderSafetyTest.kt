@@ -316,11 +316,64 @@ class ShaderSafetyTest {
 
     @Test
     fun ruleF_arrayParameterInFunctionDecl_isClean() {
-        // `void f(float x[8]);` is a declaration, not a usable array —
-        // the audit must not treat the parameter as a declared array.
+        // A bare `void f(float x[8]);` declaration has no body, so no
+        // dynamic use exists — the audit stays clean. (The parameter IS
+        // tracked as a declared array now, so a DEFINITION body indexing
+        // it dynamically is still caught — see the tests below.)
         val src = """
             void f(float x[8]);
             void main() { }
+        """.trimIndent()
+        assertTrue(auditOne(src = src).isEmpty())
+    }
+
+    @Test
+    fun ruleF_arrayParameterDynamicallyIndexed_isFlagged() {
+        // The gap this closes: the local-array pattern skips every line
+        // containing `(`, so without parameter tracking a dynamic index
+        // into a parameter array slipped past rule (f) entirely.
+        val src = """
+            float g(float x[8], int i) { return x[i]; }
+            void main() { }
+        """.trimIndent()
+        val issues = auditOne(src = src)
+        assertEquals(listOf("dynamic-array-index"), rules(issues))
+        assertEquals(1, issues[0].lineNumber)
+    }
+
+    @Test
+    fun ruleF_arrayParameterConstantIndexed_isClean() {
+        val src = """
+            float g(float x[8]) { return x[0] + x[7]; }
+            void main() { }
+        """.trimIndent()
+        assertTrue(auditOne(src = src).isEmpty())
+    }
+
+    @Test
+    fun ruleF_samplerArrayParameterDynamicallyIndexed_isFlaggedAsRuleA() {
+        // A sampler array parameter dynamically indexed is rule (a)'s
+        // territory — it must not double-report as a plain-array index.
+        val src = """
+            float g(highp sampler2D tex[4], int i) { return texture(tex[i], vec2(0.5)).r; }
+            void main() { }
+        """.trimIndent()
+        val issues = auditOne(src = src)
+        assertEquals(listOf("dynamic-sampler-index"), rules(issues))
+    }
+
+    @Test
+    fun ruleF_callArgumentsNeverRegisterAsParameters() {
+        // Call arguments index real arrays but declare nothing: `mix(...)`
+        // and the constructor call `vec3(1.0)` must not register phantom
+        // arrays, and the constant indices used here stay clean.
+        val src = """
+            vec3 h(vec3 p) { return p; }
+            void main() {
+                float a[8];
+                float y = mix(a[0], a[1], 0.5);
+                vec3 q = h(vec3(1.0));
+            }
         """.trimIndent()
         assertTrue(auditOne(src = src).isEmpty())
     }

@@ -30,7 +30,11 @@ package com.lumora.photoeditor.engine
  * 2026-10-19 — legal ES 3.00, but several Mali drivers miscompile it in
  * fragment shaders even when the loop bound is constant. The loops are now
  * unrolled and the audit flags any non-constant index into any declared
- * array, sampler or not.
+ * array, sampler or not. "Declared" covers uniforms, locals, AND
+ * array-typed function parameters (`float g(float x[8]) { ... x[i] ... }`):
+ * the local-array pattern skips every line containing `(`, so parameters
+ * are tracked separately — otherwise a dynamic index into a parameter
+ * array would slip past the rule entirely.
  * Rule (g) covers the remaining spec-level hazard: ES 1.00-only built-ins
  * (`gl_FragColor`, `gl_FragData`, `gl_TexCoord`, `texture2D*` / `textureCube*` /
  * `shadow2D*`, and the `varying` / `attribute` qualifiers) appearing in a
@@ -137,10 +141,23 @@ object ShaderSafety {
      * Local array declaration: `float centers[8];` (also `const`).
      * Anchored to line start so function declarations with array
      * parameters (`void f(float x[8]);`) never match; the audit additionally
-     * skips lines containing `(` before applying this.
+     * skips lines containing `(` before applying this — array-typed
+     * function PARAMETERS are covered separately by [arrayParamDecl].
      */
     private val localArrayDecl =
         Regex("""^\s*(?:const\s+)?(?:float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;""")
+
+    /**
+     * Array-typed function parameter inside a parameter list: `float x[8]`,
+     * `highp sampler2D tex[4]`, or unsized `vec3 v[]`. Applied ONLY to the
+     * text between a signature's parentheses (see [paramListOf]), so a call
+     * argument like `f(a[0])` — a single identifier before the `[`, not a
+     * `type name` pair — can never match. The leading `(?:^|[\s,(])` keeps
+     * constructor calls like `vec3(1.0)` (no `type name` before `[` anyway)
+     * and comma-separated arguments from matching.
+     */
+    private val arrayParamDecl =
+        Regex("""(?:^|[\s,(])(?:lowp|mediump|highp)?\s*(\w*[sS]ampler\w*|\w+)\s+(\w+)\s*\[\s*(\d*)\s*\]""")
 
     /**
      * ES 1.00-only built-ins: compile errors in a `#version 300 es` source
@@ -263,6 +280,31 @@ object ShaderSafety {
         return varyings
     }
 
+    /**
+     * The parameter-list text of a function signature line: the source
+     * between the first `(` and its matching `)`. Returns "" when the
+     * parens are unbalanced (the caller then finds no parameters —
+     * fail-closed, never a false positive). Only single-line signatures
+     * are covered, matching the audit's line-oriented regex approach;
+     * multi-line signatures are rare in the shipped shaders and a split
+     * signature simply yields no parameter tracking for that line.
+     */
+    private fun paramListOf(line: String): String {
+        val open = line.indexOf('(')
+        if (open < 0) return ""
+        var depth = 0
+        for (i in open until line.length) {
+            when (line[i]) {
+                '(' -> depth++
+                ')' -> {
+                    depth--
+                    if (depth == 0) return line.substring(open + 1, i)
+                }
+            }
+        }
+        return ""
+    }
+
     /** Every GLSL source shipped with the app. */
     fun shippedSources(): List<Pair<String, String>> = listOf(
         "VERTEX" to Shaders.VERTEX,
@@ -290,12 +332,13 @@ object ShaderSafety {
      *    a spec-level compile error that strict Mali drivers reject
      *    outright (lenient drivers sometimes accept the familiar names),
      *    and
-     *  - any non-sampler array (uniform or local) indexed with a
-     *    non-constant expression — the loop-indexed `uHsl[i]` / `uBwMix[i]` /
-     *    `centers[i]` HSL/B&W mixer loops shipped exactly this until
-     *    2026-10-19; several Mali drivers miscompile dynamic array indexing
-     *    in fragment shaders even when the loop bound is constant, so the
-     *    shipped shaders index every array with constants only, and
+     *  - any non-sampler array (uniform, local, or array-typed function
+     *    parameter) indexed with a non-constant expression — the
+     *    loop-indexed `uHsl[i]` / `uBwMix[i]` / `centers[i]` HSL/B&W mixer
+     *    loops shipped exactly this until 2026-10-19; several Mali drivers
+     *    miscompile dynamic array indexing in fragment shaders even when
+     *    the loop bound is constant, so the shipped shaders index every
+     *    array with constants only, and
      *  - any GLSL-ES-3.00-reserved word (`sample`, `input`, `filter`, …)
      *    used as a variable or function name — strict Mali drivers reject
      *    the program while lenient drivers accept it, and
@@ -330,6 +373,26 @@ object ShaderSafety {
                 if (!line.contains('(')) {
                     localArrayDecl.findAll(line).forEach { m ->
                         plainArrays += m.groupValues[1]
+                    }
+                } else {
+                    // Array-typed function parameters, e.g.
+                    // `float g(float x[8]) { ... x[i] ... }`: the local-array
+                    // regex above skips every line containing `(`, so without
+                    // this a dynamic index into a parameter array would slip
+                    // past rule (f) — the same Mali miscompile hazard as a
+                    // dynamic index into a uniform or local array. Sampler
+                    // array parameters join [samplers] (rule a), the rest join
+                    // [plainArrays] (rule f); unsized parameters (`vec3 v[]`)
+                    // register with size 0 (the size is informational only —
+                    // Pass 2 flags any non-constant index regardless).
+                    arrayParamDecl.findAll(paramListOf(line)).forEach { m ->
+                        val type = m.groupValues[1]
+                        val name = m.groupValues[2]
+                        if (type.contains("sampler", ignoreCase = true)) {
+                            samplers[name] = m.groupValues[3].toIntOrNull() ?: 0
+                        } else {
+                            plainArrays += name
+                        }
                     }
                 }
             }
