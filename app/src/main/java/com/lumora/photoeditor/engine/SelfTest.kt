@@ -373,8 +373,8 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     kotlin.math.abs(r - g) <= 24 && kotlin.math.abs(g - b) <= 24
                 }
                 (redOnMask >= 0.8 && cleanOffMask >= 0.8) to
-                    "red on mask=${(redOnMask * 100).toInt()}% " +
-                        "clean off mask=${(cleanOffMask * 100).toInt()}%"
+                    "red on mask=${(redOnMask * 100).roundToInt()}% " +
+                        "clean off mask=${(cleanOffMask * 100).roundToInt()}%"
             }
 
             // ---- check 5: mask overlay via uMaskTex[3] ----
@@ -393,8 +393,8 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     kotlin.math.abs(r - g) <= 24 && kotlin.math.abs(g - b) <= 24
                 }
                 (redOnMask >= 0.8 && cleanOffMask >= 0.8) to
-                    "red on mask=${(redOnMask * 100).toInt()}% " +
-                        "clean off mask=${(cleanOffMask * 100).toInt()}%"
+                    "red on mask=${(redOnMask * 100).roundToInt()}% " +
+                        "clean off mask=${(cleanOffMask * 100).roundToInt()}%"
             }
 
             // ---- check 5b: mask overlay in the reserved removal slot ----
@@ -417,8 +417,8 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     kotlin.math.abs(r - g) <= 24 && kotlin.math.abs(g - b) <= 24
                 }
                 (redOnMask >= 0.8 && cleanOffMask >= 0.8) to
-                    "red on mask=${(redOnMask * 100).toInt()}% " +
-                        "clean off mask=${(cleanOffMask * 100).toInt()}%"
+                    "red on mask=${(redOnMask * 100).roundToInt()}% " +
+                        "clean off mask=${(cleanOffMask * 100).roundToInt()}%"
             }
 
             // ---- check 6: lens blur (uBlur texture path) ----
@@ -576,7 +576,7 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                 (maskOk && changed <= 4) to
                     "left=${leftMean.toInt()} (need >235) " +
                         "right=${rightMean.toInt()} (need <20) " +
-                        "gray=${(grayLeft * 100).toInt()}% (need >=90%) " +
+                        "gray=${(grayLeft * 100).roundToInt()}% (need >=90%) " +
                         "fx-changed=$changed (need <=4)"
             }
 
@@ -616,7 +616,7 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                         greenLuma - redLuma > 80.0 &&
                         redLumaM - redLuma > 40.0 &&
                         kotlin.math.abs(greenLumaM - greenLuma) <= 15.0
-                    ok to "gray=${(grayN * 100).toInt()}% (need >=90%) " +
+                    ok to "gray=${(grayN * 100).roundToInt()}% (need >=90%) " +
                         "red=${redLuma.toInt()}->${redLumaM.toInt()} " +
                         "(need 40..70, mix lift >40) " +
                         "green=${greenLuma.toInt()}->${greenLumaM.toInt()} " +
@@ -759,7 +759,7 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                         greenGrayMean in 105.0..155.0 && redUntouched
                     ok to "red->orange g=${redG.toInt()} (need 100..175) " +
                         "green-untouched=$greenUntouched " +
-                        "green->gray=${(graySat * 100).toInt()}% " +
+                        "green->gray=${(graySat * 100).roundToInt()}% " +
                         "mean=${greenGrayMean.toInt()} " +
                         "(need >=90%, ~128) red-untouched=$redUntouched"
                 } finally {
@@ -1097,10 +1097,10 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                             kotlin.math.abs(g - b) <= 24
                     }
                     (leftRed >= 0.9 && rightGray >= 0.9 && ignored >= 0.9) to
-                        "flag on: red-left=${(leftRed * 100).toInt()}% " +
-                            "gray-right=${(rightGray * 100).toInt()}% " +
+                        "flag on: red-left=${(leftRed * 100).roundToInt()}% " +
+                            "gray-right=${(rightGray * 100).roundToInt()}% " +
                             "flag off: left stays gray " +
-                            "${(ignored * 100).toInt()}%"
+                            "${(ignored * 100).roundToInt()}%"
                 } finally {
                     uploadRetouch(null)
                     overlay.recycle()
@@ -2444,8 +2444,8 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                 val ovOk = redOnInverse >= 0.8 && cleanOnMask >= 0.8
                 (adjOk && ovOk) to
                     "adj: left=${left.toInt()} (need 100..156) right=${right.toInt()} " +
-                        "(need >200); overlay: red on inverse=${(redOnInverse * 100).toInt()}% " +
-                        "clean on mask=${(cleanOnMask * 100).toInt()}% (need >=80% each)"
+                        "(need >200); overlay: red on inverse=${(redOnInverse * 100).roundToInt()}% " +
+                        "clean on mask=${(cleanOnMask * 100).roundToInt()}% (need >=80% each)"
             }
 
             // ---- check 37: look transfer 3D LUT (sampler3D path, unit 10) ----
