@@ -467,7 +467,11 @@ private fun ExportDone(
     val type = Lumora.type
     val context = LocalContext.current
     val info by produceState<ExportFileInfo?>(initialValue = null, uri) {
-        value = readExportFileInfo(context, uri)
+        // readExportFileInfo does blocking I/O on its own thread-unaware
+        // path: a MediaStore query (disk IPC) plus openInputStream and a
+        // bounds decode. produceState's producer runs on the main thread,
+        // so dispatch off it — the export-done stats must not jank.
+        value = withContext(Dispatchers.IO) { readExportFileInfo(context, uri) }
     }
     val name = info?.displayName ?: settings.galleryFileName()
     val formatLabel = when (settings.format) {

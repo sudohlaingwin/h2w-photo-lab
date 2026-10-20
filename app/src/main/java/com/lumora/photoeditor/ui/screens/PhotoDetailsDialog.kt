@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lumora.photoeditor.data.LibraryImage
 import com.lumora.photoeditor.data.PhotoDetails
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.lumora.photoeditor.data.loadPhotoDetails
 import com.lumora.photoeditor.ui.components.ShimmerBox
 import com.lumora.photoeditor.ui.components.LumoraBottomSheet
@@ -69,7 +71,13 @@ fun PhotoDetailsDialog(
         initialValue = null,
         key1 = img.id,
     ) {
-        value = loadPhotoDetails(context, img)
+        // loadPhotoDetails does blocking I/O: ContentResolver.openInputStream
+        // + ExifInterface reads, and for proprietary RAW containers a full
+        // temp-file copy of the (tens-of-MB) RAW file plus native LibRaw
+        // parsing. produceState's producer runs on the main thread, so this
+        // must be dispatched off it or opening Details on a RAW photo janks
+        // / risks an ANR on slower devices.
+        value = withContext(Dispatchers.IO) { loadPhotoDetails(context, img) }
     }
 
     LumoraBottomSheet(
