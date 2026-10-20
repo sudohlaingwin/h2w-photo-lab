@@ -4412,11 +4412,16 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     s.photoIds == listOf("p1", "p2") &&
                     s.marks.keys == setOf("p1", "p2") &&
                     sanitizeProofingGallery(g.copy(name = "")) == null
-                val stats = s!!.stats() == Triple(1, 1, 0) &&
+                // Smart-cast guard instead of !!: this self-test runs on the
+                // device's GL thread, so a failing sanitize must report
+                // FAIL, never throw NPE.
+                val stats = s != null &&
+                    s.stats() == Triple(1, 1, 0) &&
                     s.copy(marks = emptyMap()).stats() == Triple(0, 0, 2) &&
                     // a mark on a removed photo never counts
                     s.copy(photoIds = listOf("p1")).stats() == Triple(1, 0, 0)
-                val summary = s.summary == "2 photos · 1 picked · 1 rejected" &&
+                val summary = s != null &&
+                    s.summary == "2 photos · 1 picked · 1 rejected" &&
                     ProofingGallery(id = "e", name = "E").summary == "0 photos" &&
                     ProofingGallery(id = "o", name = "O",
                         photoIds = listOf("p1")).summary == "1 photo"
