@@ -36,6 +36,9 @@ fun ParamSlider(
         value = value,
         valueRange = range,
         default = default,
+        // Premium slider Part 2: the historyLabel is the most discriminating
+        // parameter identity, so it keys the gradient resolution (Tier 2).
+        gradientKey = historyLabel,
         onBegin = { vm.beginGesture() },
         onValueChange = { v -> vm.update(gesture = true) { s -> update(s, v) } },
         onEnd = { vm.endGesture(historyLabel) },

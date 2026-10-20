@@ -59,6 +59,13 @@ import com.lumora.photoeditor.export.contactSheetPages
 import com.lumora.photoeditor.export.markBadgeText
 import com.lumora.photoeditor.export.sheetCellCaption
 import com.lumora.photoeditor.ui.components.formatPercent
+import androidx.compose.ui.graphics.Color as UiColor
+import com.lumora.photoeditor.ui.components.GradientDecision
+import com.lumora.photoeditor.ui.components.resolveTrackGradient
+import com.lumora.photoeditor.ui.components.sampleTrackGradient
+import com.lumora.photoeditor.ui.components.sliderAnchorFrac
+import com.lumora.photoeditor.ui.components.sliderDefaultTickVisible
+import com.lumora.photoeditor.ui.components.sliderSemanticRampsForTest
 
 /** One on-device GPU check, shown in the self-test dialog. */
 data class SelfTestCheck(
@@ -4180,6 +4187,81 @@ fun GlEngine.runSelfTest(preview: Bitmap?): SelfTestResult {
                     val (v, r, d) = input
                     "formatPercent($v, $r, $d)=${formatPercent(v, r, d)} want $want"
                 }}"
+            }
+            // Premium slider Part 2 (2026-10-20): gradient keying is
+            // identity-based and TERMINAL. A historyLabel hit never falls
+            // through to the label table, and "Luminance"/"Hue" pin to
+            // Neutral by design — not by accident of a missing table entry.
+            check("Slider gradient keying (premium Part 2)") {
+                val t1 = resolveTrackGradient(null, "Luminance NR", "Luminance", 0.5f) ==
+                    GradientDecision.Neutral
+                val t2 = resolveTrackGradient(null, "Luminance", "Luminance", 0.5f) ==
+                    GradientDecision.Neutral
+                val t3 = resolveTrackGradient(null, "Hue", "Hue", 0.5f) ==
+                    GradientDecision.Neutral
+                val t4 = resolveTrackGradient(null, null, "Temperature", 0.5f) is
+                    GradientDecision.Stops
+                // Near-miss label: exact-match lookup, never substring.
+                val t5 = resolveTrackGradient(null, null, "Shadows tint", 0.5f) ==
+                    GradientDecision.Neutral
+                val t6 = resolveTrackGradient(null, "Temperature", "Temperature", 0.5f) is
+                    GradientDecision.Stops
+                // Explicit Tier-1 param wins over everything.
+                val t7 = resolveTrackGradient(
+                    GradientDecision.Neutral, "Temperature", "Temperature", 0.5f,
+                ) == GradientDecision.Neutral
+                // Key hit is terminal: must NOT fall through to the label
+                // table even when the label would resolve.
+                val t8 = resolveTrackGradient(null, "Luminance", "Temperature", 0.5f) ==
+                    GradientDecision.Neutral
+                val ok = t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8
+                ok to if (ok) "key/label/explicit precedence incl. terminal-key + Shadows-tint near-miss"
+                else "FAIL: t1=$t1 t2=$t2 t3=$t3 t4=$t4 t5=$t5 t6=$t6 t7=$t7 t8=$t8"
+            }
+            // Stop-list construction invariants: every semantic ramp has
+            // >= 2 stops, first at 0f, last at 1f, sorted; sampling hits
+            // exact ends/mid on a centered 3-stop ramp, stays flat on a
+            // single-color decision, and degrades gracefully on degenerate
+            // input.
+            check("Slider gradient construction (premium Part 2)") {
+                val ramps = sliderSemanticRampsForTest()
+                val shape = ramps.isNotEmpty() && ramps.all { s ->
+                    val st = s.stops
+                    st.size >= 2 && st.first().first == 0f && st.last().first == 1f &&
+                        st.zipWithNext().all { (a, b) -> a.first <= b.first }
+                }
+                val ramp = listOf(0f to UiColor.Red, 0.5f to UiColor.Green, 1f to UiColor.Blue)
+                val ends = sampleTrackGradient(ramp, 0f) == UiColor.Red &&
+                    sampleTrackGradient(ramp, 1f) == UiColor.Blue
+                val mid = sampleTrackGradient(ramp, 0.5f) == UiColor.Green
+                val trueMid = sampleTrackGradient(
+                    listOf(0f to UiColor.Black, 1f to UiColor.White), 0.5f,
+                ) == UiColor(0.5f, 0.5f, 0.5f)
+                val flat = listOf(0f to UiColor.Yellow, 1f to UiColor.Yellow)
+                val flatOk = (0..10).all { i -> sampleTrackGradient(flat, i / 10f) == UiColor.Yellow }
+                val degenerate = sampleTrackGradient(listOf(0f to UiColor.Cyan), 0.3f) == UiColor.Cyan
+                val ok = shape && ends && mid && trueMid && flatOk && degenerate
+                ok to if (ok) "${ramps.size} semantic ramps shaped; sampling end/mid/end + true midpoint + flat + degenerate"
+                else "FAIL: shape=$shape ends=$ends mid=$mid trueMid=$trueMid flat=$flatOk degenerate=$degenerate"
+            }
+            // Active-segment anchoring + default-tick predicate: ONLY
+            // crossing-zero ranges anchor at the default; unipolar ranges
+            // (edge or interior default) anchor at 0. The tick shows for
+            // interior defaults, hides at edges, and is suppressed wherever
+            // it would coincide with the zero marker.
+            check("Slider anchor + default tick (premium Part 2)") {
+                val a1 = sliderAnchorFrac(-100f..100f, 0f) == 0.5f
+                val a2 = sliderAnchorFrac(0f..100f, 100f) == 0f
+                val a3 = sliderAnchorFrac(0f..100f, 50f) == 0f
+                val a4 = sliderAnchorFrac(-5f..5f, 0f) == 0.5f
+                val k1 = sliderDefaultTickVisible(0.5f, crossing = false, zeroFrac = 0f)
+                val k2 = !sliderDefaultTickVisible(1f, crossing = false, zeroFrac = 0f)
+                val k3 = !sliderDefaultTickVisible(0f, crossing = false, zeroFrac = 0f)
+                val k4 = !sliderDefaultTickVisible(0.5f, crossing = true, zeroFrac = 0.5f)
+                val k5 = sliderDefaultTickVisible(0.25f, crossing = true, zeroFrac = 0.5f)
+                val ok = a1 && a2 && a3 && a4 && k1 && k2 && k3 && k4 && k5
+                ok to if (ok) "crossing-only anchoring; tick interior/edge/zero-coincide"
+                else "FAIL: a1=$a1 a2=$a2 a3=$a3 a4=$a4 k1=$k1 k2=$k2 k3=$k3 k4=$k4 k5=$k5"
             }
             // ---- check 62: keyword normalization (Phase C#6 slice 1) ----
             // Pure-Kotlin pin for normalizeKeyword()/keywordKeyOf(): display
