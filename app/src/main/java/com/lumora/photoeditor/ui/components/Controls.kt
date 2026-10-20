@@ -590,6 +590,7 @@ fun LumoraSlider(
             thumb = lumoraSliderThumb(dragging, enabled, valueRange, trackStops),
             track = lumoraSliderTrack(
                 valueRange = valueRange,
+                default = default,
                 defaultFrac = defaultFrac,
                 isDefault = value == default,
                 enabled = enabled,
@@ -647,6 +648,7 @@ private fun lumoraSliderThumb(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun lumoraSliderTrack(
     valueRange: ClosedFloatingPointRange<Float>,
+    default: Float,
     defaultFrac: Float,
     isDefault: Boolean,
     enabled: Boolean,
@@ -688,8 +690,10 @@ private fun lumoraSliderTrack(
         }
         // 4. active segment. The brush is mapped to the full track width in
         // every layer — this segment selects a portion of the gradient,
-        // never re-stretches it.
-        val anchorFrac = if (crossing) defaultFrac else 0f
+        // never re-stretches it. The anchor uses the pinned sliderAnchorFrac
+        // (SelfTest "Slider anchor + default tick") directly, so the pins
+        // verify the live draw path — no shadow copy to drift.
+        val anchorFrac = sliderAnchorFrac(valueRange, default)
         val ax = size.width * anchorFrac
         val tx = size.width * frac
         drawLine(
@@ -769,6 +773,7 @@ fun LumoraCompactSlider(
         thumb = lumoraSliderThumb(dragging, enabled, valueRange, trackStops),
         track = lumoraSliderTrack(
             valueRange = valueRange,
+            default = default,
             defaultFrac = sliderFrac(default, valueRange),
             isDefault = !resettable,
             enabled = enabled,
