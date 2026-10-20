@@ -549,4 +549,34 @@ class ShaderSafetyTest {
             issues.isEmpty(),
         )
     }
+
+    @Test
+    fun shippedSources_coversEveryGlslConstant_inShaders() {
+        // Anti-rot for the headline guarantee: [ShaderSafety.shippedSources]
+        // is a hardcoded list, so a newly added `Shaders` constant would
+        // silently escape the Mali audit (and the in-app GPU self-test that
+        // runs it). This reflects over every static String constant on
+        // [Shaders] and requires each GLSL source (identified by its
+        // `#version` line) to appear in the audited list. Adding a shader
+        // now fails loudly here (and in shippedSources_listsFourShaders)
+        // instead of shipping unaudited.
+        val audited = ShaderSafety.shippedSources().map { it.first }.toSet()
+        val glslConstants = Shaders::class.java.declaredFields
+            .filter { field ->
+                field.type == String::class.java &&
+                    java.lang.reflect.Modifier.isStatic(field.modifiers) &&
+                    (field.get(null) as? String)?.contains("#version") == true
+            }
+            .map { it.name }
+        assertTrue(
+            "Shaders must declare at least one GLSL source",
+            glslConstants.isNotEmpty(),
+        )
+        val missing = glslConstants.filter { it !in audited }
+        assertTrue(
+            "Shaders constants missing from ShaderSafety.shippedSources " +
+                "(would ship unaudited on Mali GPUs): $missing",
+            missing.isEmpty(),
+        )
+    }
 }
