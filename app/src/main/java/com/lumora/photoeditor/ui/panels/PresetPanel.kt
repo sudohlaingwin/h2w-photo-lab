@@ -110,10 +110,14 @@ fun PresetPanel(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val text = runCatching {
-                context.contentResolver.openInputStream(uri)
-                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
-            }.getOrNull()
+            // Disk/SAF read — a cloud-backed document provider can stall,
+            // so never read it on the Main dispatcher.
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+            }
             val imported = text?.let { container.presets.importPreset(it) }
             onNotice(if (imported != null) "Preset \"${imported.name}\" imported"
             else "Could not read that preset file")
@@ -163,10 +167,14 @@ fun PresetPanel(
         pendingBackup = null
         if (uri == null || text == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val ok = runCatching {
-                context.contentResolver.openOutputStream(uri)
-                    ?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-            }.getOrNull() != null
+            // Disk/SAF write — a cloud-backed document provider can stall,
+            // so never write on the Main dispatcher.
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)
+                        ?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                }.getOrNull() != null
+            }
             onNotice(if (ok) "Presets backed up" else "Could not write the backup file")
         }
     }
@@ -175,10 +183,14 @@ fun PresetPanel(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val text = runCatching {
-                context.contentResolver.openInputStream(uri)
-                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
-            }.getOrNull()
+            // Disk/SAF read — a cloud-backed document provider can stall,
+            // so never read it on the Main dispatcher.
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+            }
             if (text == null) {
                 onNotice("Could not read that backup file")
                 return@launch

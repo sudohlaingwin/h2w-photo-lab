@@ -22,10 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -55,6 +55,7 @@ import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -379,6 +380,13 @@ private fun SheetRunning(
     }
 }
 
+/** Decode state for the contact-sheet preview on the Done screen. */
+private sealed interface SheetPreview {
+    data object Loading : SheetPreview
+    data class Ready(val bitmap: android.graphics.Bitmap) : SheetPreview
+    data object Unavailable : SheetPreview
+}
+
 @Composable
 private fun SheetDone(
     outcome: ContactSheetOutcome,
@@ -391,18 +399,33 @@ private fun SheetDone(
     val colors = Lumora.colors
     val type = Lumora.type
     // Downsampled preview of the first page — the full sheet is far too
-    // big to hold in Compose memory twice.
-    val preview = remember(outcome.files) {
-        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-        runCatching {
-            BitmapFactory.decodeFile(outcome.files.first().absolutePath, opts)
-        }.getOrNull()
-    }
-    // The decoded preview is ours to release: remember() drops the old value
-    // without cleanup when a new outcome arrives, and on screen exit.
-    DisposableEffect(outcome.files) {
-        onDispose {
-            if (preview != null && !preview.isRecycled) preview.recycle()
+    // big to hold in Compose memory twice. Decoded on Dispatchers.IO:
+    // BitmapFactory.decodeFile does a disk read plus JPEG/PNG decode and
+    // must never run during composition on the main thread (frame jank /
+    // ANR risk on slower devices).
+    val preview by produceState<SheetPreview>(
+        initialValue = SheetPreview.Loading,
+        key1 = outcome.files,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                val bmp = BitmapFactory.decodeFile(
+                    outcome.files.first().absolutePath, opts)
+                if (bmp != null) SheetPreview.Ready(bmp)
+                else SheetPreview.Unavailable
+            } catch (t: Throwable) {
+                // A cancelled producer must stay cancelled — swallowing the
+                // exception here would leak the in-flight decode.
+                if (t is CancellationException) throw t
+                SheetPreview.Unavailable
+            }
+        }
+        // The decoded preview is ours to release: the producer is disposed
+        // both when a new outcome arrives (key change) and on screen exit.
+        awaitDispose {
+            val bmp = (value as? SheetPreview.Ready)?.bitmap
+            if (bmp != null && !bmp.isRecycled) bmp.recycle()
         }
     }
     Column(
@@ -417,12 +440,31 @@ private fun SheetDone(
             if (outcome.failed > 0) append(" · ${outcome.failed} unavailable")
         }
         Text(summary, style = type.body, color = colors.textSecondary)
-        if (preview != null) {
-            Image(
-                bitmap = preview.asImageBitmap(),
-                contentDescription = "Contact sheet preview for $galleryName",
-                modifier = Modifier.fillMaxWidth(),
-            )
+        when (val p = preview) {
+            is SheetPreview.Ready -> {
+                Image(
+                    bitmap = p.bitmap.asImageBitmap(),
+                    contentDescription = "Contact sheet preview for $galleryName",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            SheetPreview.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LumoraProgressIndicator(
+                        contentDescription = "Loading contact sheet preview",
+                    )
+                }
+            }
+            SheetPreview.Unavailable -> {
+                Text(
+                    "Preview unavailable",
+                    style = type.body,
+                    color = colors.textTertiary,
+                )
+            }
         }
         if (notice != null) {
             Text(notice, style = type.body, color = colors.textSecondary)
