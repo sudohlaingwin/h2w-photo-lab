@@ -135,8 +135,12 @@ fun WaveformView(
     height: Dp = 72.dp,
 ) {
     val colors = Lumora.colors
-    val brightest = ((waveform.mean.maxOrNull() ?: 0) * 100) / 255
-    val darkest = ((waveform.mean.minOrNull() ?: 0) * 100) / 255
+    // Round-half-up (2026-10-20): integer division truncated these readouts
+    // up to 1% low — same defect class as the scope-display sweep
+    // (fa6fbaf), which covered the drawn values but missed these
+    // accessibility strings.
+    val brightest = ((waveform.mean.maxOrNull() ?: 0) * 100f / 255f).roundToInt()
+    val darkest = ((waveform.mean.minOrNull() ?: 0) * 100f / 255f).roundToInt()
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -213,7 +217,9 @@ fun VectorscopeView(
             }
         }
     }
-    val satPct = if (total > 0) (saturated * 100 / total).toInt() else 0
+    // Round-half-up (2026-10-20): Long division truncated the readout;
+    // same defect class as the waveform readout fix above.
+    val satPct = if (total > 0) (saturated * 100.0 / total).roundToInt() else 0
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -294,7 +300,9 @@ fun RgbParadeView(
     // per-channel clipped-at-top fraction (mean envelope near 255)
     val clipPct = chanNames.indices.map { k ->
         val pinned = parade.mean[k].count { it >= 250 }
-        (pinned * 100 / cols.coerceAtLeast(1)).coerceIn(0, 100)
+        // Round-half-up (2026-10-20): integer division truncated the
+        // per-channel clip readout; same defect class as above.
+        (pinned * 100f / cols.coerceAtLeast(1)).roundToInt().coerceIn(0, 100)
     }
     val summary = chanNames.indices.joinToString(", ") { k ->
         "${chanNames[k]} ${clipPct[k]} percent clipped"
