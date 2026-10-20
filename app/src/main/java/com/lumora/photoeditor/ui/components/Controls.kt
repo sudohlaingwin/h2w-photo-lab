@@ -944,6 +944,16 @@ fun LumoraChip(
     /** Optional long-press action (e.g. delete); announced via [onLongClickLabel]. */
     onLongClick: (() -> Unit)? = null,
     onLongClickLabel: String? = null,
+    /**
+     * Announced role. Default [Role.Button] preserves the long-standing
+     * effective behavior (the chip is also used for one-shot actions like
+     * "Shuffle dust pattern", where a toggle role would be wrong).
+     * Pass [Role.Checkbox] for genuine on/off toggles (e.g. mask invert,
+     * move-focus mode) so TalkBack announces "checked/not checked".
+     * Single-choice option rows keep the default: they are choices among
+     * alternatives, not independent on/off switches.
+     */
+    role: Role = Role.Button,
     label: @Composable () -> Unit,
 ) {
     val colors = Lumora.colors
@@ -962,12 +972,15 @@ fun LumoraChip(
             .heightIn(min = 48.dp)
             .clip(shape)
             .background(if (selected) colors.accentDim else colors.panelElevated)
-            // TalkBack (22:32 cycle): the bare clickable() below made the
-            // chip announce as a generic "double-tap to activate" with no
-            // toggle state — declare the checkbox role + selected state so
-            // it reads "<label>, checkbox, checked/not checked".
-            .semantics {
-                role = Role.Checkbox
+            // TalkBack: exactly ONE semantics block on this node. This used
+            // to be two stacked blocks declaring different roles
+            // (Role.Checkbox from the 22:32 accessibility pass, Role.Button
+            // from the baseline) — stacked semantics merge with the later
+            // modifier winning, so the Checkbox declaration was dead code
+            // and its comment claimed behavior that never took effect.
+            // The role now comes from the [role] parameter instead.
+            .semantics(mergeDescendants = true) {
+                this.role = role
                 this.selected = selected
             }
             .border(
@@ -975,10 +988,6 @@ fun LumoraChip(
                 color = if (selected) colors.accent.copy(alpha = 0.55f) else colors.divider,
                 shape = shape,
             )
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                this.selected = selected
-            }
             .then(clickModifier)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,

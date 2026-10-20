@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.Role
 import com.lumora.photoeditor.engine.LightLeakStyle
 import com.lumora.photoeditor.engine.OpticsParams
 import com.lumora.photoeditor.ui.components.LumoraChip
@@ -143,6 +144,8 @@ fun OpticsPanel(
             LumoraChip(
                 selected = focusPickActive,
                 onClick = onMoveFocus,
+                // Genuine mode toggle: announce "checked/not checked".
+                role = Role.Checkbox,
                 label = { Text(if (focusPickActive) "Done moving focus" else "Move focus on photo") },
                 modifier = Modifier.fillMaxWidth(),
             )

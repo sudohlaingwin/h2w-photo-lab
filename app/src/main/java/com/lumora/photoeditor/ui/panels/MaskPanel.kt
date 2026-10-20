@@ -502,6 +502,8 @@ private fun MaskQuickControls(vm: EditorViewModel, mask: Mask) {
             LumoraChip(
                 selected = mask.inverted,
                 onClick = { vm.invertMask(mask.id) },
+                // Genuine on/off toggle: announce "checked/not checked".
+                role = Role.Checkbox,
                 label = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(LumoraIcons.InvertColors, null,
