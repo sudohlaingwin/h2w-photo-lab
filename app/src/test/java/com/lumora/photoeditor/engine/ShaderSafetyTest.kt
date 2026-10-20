@@ -304,6 +304,47 @@ class ShaderSafetyTest {
     }
 
     @Test
+    fun ruleF_initializedLocalArrayDynamicallyIndexed_isFlagged() {
+        // The hole this closes: the old local-array pattern required a
+        // trailing `;`, and Pass 1b skipped every line containing `(` —
+        // so an initialized declaration (`float lut[4] = float[4](...);`)
+        // registered nothing and a dynamic index into it slipped past
+        // rule (f) entirely.
+        val src = """
+            void main() {
+                float lut[4] = float[4](0.0, 0.33, 0.66, 1.0);
+                float y = lut[i];
+            }
+        """.trimIndent()
+        val issues = auditOne(src = src)
+        assertEquals(listOf("dynamic-array-index"), rules(issues))
+        assertEquals(3, issues[0].lineNumber)
+    }
+
+    @Test
+    fun ruleF_initializedLocalArrayConstantIndexed_isClean() {
+        val src = """
+            void main() {
+                float lut[4] = float[4](0.0, 0.33, 0.66, 1.0);
+                float y = lut[0] + lut[3];
+            }
+        """.trimIndent()
+        assertTrue(auditOne(src = src).isEmpty())
+    }
+
+    @Test
+    fun ruleF_constInitializedLocalArrayDynamicallyIndexed_isFlagged() {
+        val src = """
+            void main() {
+                const vec3 palette[2] = vec3[2](vec3(1.0), vec3(0.0));
+                vec3 c = palette[i];
+            }
+        """.trimIndent()
+        val issues = auditOne(src = src)
+        assertEquals(listOf("dynamic-array-index"), rules(issues))
+    }
+
+    @Test
     fun ruleF_constantIndex_isClean() {
         val src = """
             uniform float uHsl[8];

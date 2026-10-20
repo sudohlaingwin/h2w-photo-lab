@@ -138,14 +138,23 @@ object ShaderSafety {
         Regex("""uniform\s+(?:(?:lowp|mediump|highp)\s+)?(\w+)\s+(\w+)\s*\[\s*(\d+)\s*\]""")
 
     /**
-     * Local array declaration: `float centers[8];` (also `const`).
+     * Local array declaration: `float centers[8];` (also `const`, also with
+     * an initializer: `float lut[4] = float[4](...)`).
      * Anchored to line start so function declarations with array
-     * parameters (`void f(float x[8]);`) never match; the audit additionally
-     * skips lines containing `(` before applying this — array-typed
-     * function PARAMETERS are covered separately by [arrayParamDecl].
+     * parameters (`void f(float x[8]);`) never match; a signature's name is
+     * always followed by `(`, never `[`, so the anchor alone keeps them
+     * out — array-typed function PARAMETERS are covered separately by
+     * [arrayParamDecl]. The trailing `;` is deliberately NOT required: an
+     * initialized declaration is still a declaration, and the old
+     * `\]\s*;` form let it slip past rule (f) — a dynamic index into an
+     * initialized local array was invisible to the audit. A line starting
+     * with `<type> <name>[<n>]` is always a declaration in GLSL (indexing
+     * expressions never carry a type prefix; constructor calls like
+     * `float[3](...)` have no `<name>` between the type and `[`).
+     * One declaration per line; `float a[2], b[3];` registers only `a`.
      */
     private val localArrayDecl =
-        Regex("""^\s*(?:const\s+)?(?:float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;""")
+        Regex("""^\s*(?:const\s+)?(?:float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat2|mat3|mat4)\s+(\w+)\s*\[\s*(\d+)\s*\]""")
 
     /**
      * Array-typed function parameter inside a parameter list: `float x[8]`,
@@ -370,16 +379,21 @@ object ShaderSafety {
                         plainArrays += m.groupValues[2]
                     }
                 }
-                if (!line.contains('(')) {
-                    localArrayDecl.findAll(line).forEach { m ->
-                        plainArrays += m.groupValues[1]
-                    }
-                } else {
+                // Local array declarations, initialized or not. The `^` anchor
+                // on localArrayDecl keeps function signatures out (see its
+                // KDoc), so this runs on every line — including initialized
+                // declarations like `float lut[4] = float[4](...);`, which
+                // contain `(` and were previously skipped with the parameter
+                // branch below, leaving a dynamic index into them invisible
+                // to rule (f).
+                localArrayDecl.findAll(line).forEach { m ->
+                    plainArrays += m.groupValues[1]
+                }
+                if (line.contains('(')) {
                     // Array-typed function parameters, e.g.
-                    // `float g(float x[8]) { ... x[i] ... }`: the local-array
-                    // regex above skips every line containing `(`, so without
-                    // this a dynamic index into a parameter array would slip
-                    // past rule (f) — the same Mali miscompile hazard as a
+                    // `float g(float x[8]) { ... x[i] ... }`: without this a
+                    // dynamic index into a parameter array would slip past
+                    // rule (f) — the same Mali miscompile hazard as a
                     // dynamic index into a uniform or local array. Sampler
                     // array parameters join [samplers] (rule a), the rest join
                     // [plainArrays] (rule f); unsized parameters (`vec3 v[]`)
@@ -387,11 +401,11 @@ object ShaderSafety {
                     // Pass 2 flags any non-constant index regardless).
                     arrayParamDecl.findAll(paramListOf(line)).forEach { m ->
                         val type = m.groupValues[1]
-                        val name = m.groupValues[2]
+                        val paramName = m.groupValues[2]
                         if (type.contains("sampler", ignoreCase = true)) {
-                            samplers[name] = m.groupValues[3].toIntOrNull() ?: 0
+                            samplers[paramName] = m.groupValues[3].toIntOrNull() ?: 0
                         } else {
-                            plainArrays += name
+                            plainArrays += paramName
                         }
                     }
                 }
