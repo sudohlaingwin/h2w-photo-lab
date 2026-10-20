@@ -73,26 +73,13 @@ class PresetRepository(private val context: Context) {
         prepared
     }
 
-    /**
-     * Validates and de-duplicates an imported preset. Returns null when the
-     * payload is not a usable preset. Imported presets always become custom
-     * (builtIn=false) with a fresh id; a name clash gets " (2)", " (3)"…
-     */
-    private fun prepareImportedPreset(decoded: Preset?, existingNames: Set<String>): Preset? {
-        if (decoded == null) return null
-        val baseName = decoded.name.trim().ifEmpty { return null }
-        var name = baseName
-        var n = 2
-        while (name in existingNames) {
-            name = "$baseName ($n)"
-            n++
-        }
-        return decoded.copy(
-            id = "imported_${System.currentTimeMillis()}",
-            name = name,
-            builtIn = false,
-        )
-    }
+    // NOTE: the import-preparation contract lives in the top-level
+    // [prepareImportedPreset] (PresetSharing.kt) — harness-pinned pure
+    // Kotlin. Do NOT add a member with the same name here: it would shadow
+    // the contract and silently drop the cross-photo sanitizing (retouch
+    // spots / AI-derived masks must never ride along), the strength clamp,
+    // the blank-category default, and the UUID ids (timestamp ids collide
+    // when a backup restores several presets inside one millisecond).
 
     /**
      * Backs up ALL custom presets into one versioned JSON document (see
