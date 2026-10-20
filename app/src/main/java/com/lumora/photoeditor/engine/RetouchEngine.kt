@@ -200,7 +200,17 @@ object RetouchEngine {
         x0: Int, y0: Int, x1: Int, y1: Int, pad: Int,
     ): PaddedRegion = copyRegion(src, w, h, x0 - pad, y0 - pad, x1 + pad, y1 + pad)
 
-    /** Straight-alpha "over": packed-pixel twin of [blendInto]'s math. */
+    /**
+     * Straight-alpha "over": packed-pixel twin of [blendInto]'s math.
+     *
+     * Round-to-nearest packing (2026-10-20): this was the one pack site the
+     * 07579d5 roundToInt sweep missed — the old `.toInt()` truncation biased
+     * every overlapping spot's folded overlay pixel down by up to 1 level
+     * per channel (same defect class as the compositeInto fold and the
+     * skin-smoothing chain). Single spots are bit-identical either way: with
+     * a transparent dst, na == sa and mix() returns the integer-valued
+     * source channel exactly, so toInt and roundToInt agree.
+     */
     private fun overStraight(dst: Int, s: Int): Int {
         val sa = ((s ushr 24) and 0xFF) / 255f
         if (sa <= 0f) return dst
@@ -210,9 +220,9 @@ object RetouchEngine {
         fun mix(shift: Int): Int {
             val sv = ((s shr shift) and 0xFF).toFloat()
             val dv = ((dst shr shift) and 0xFF).toFloat()
-            return ((sv * sa + dv * da * (1f - sa)) / na).toInt().coerceIn(0, 255)
+            return ((sv * sa + dv * da * (1f - sa)) / na).roundToInt().coerceIn(0, 255)
         }
-        return ((na * 255f).toInt().coerceIn(0, 255) shl 24) or
+        return ((na * 255f).roundToInt().coerceIn(0, 255) shl 24) or
             (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
     }
 
