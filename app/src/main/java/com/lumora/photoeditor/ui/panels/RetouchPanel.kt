@@ -302,6 +302,7 @@ fun RetouchPanel(
         var waveletTextureKeep by remember { mutableStateOf(1f) }
         var blemishSmooth by remember { mutableStateOf(0.6f) }
         var toneEven by remember { mutableStateOf(0.3f) }
+        var waveletHint by remember { mutableStateOf<String?>(null) }
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -346,11 +347,19 @@ fun RetouchPanel(
             LumoraButton(
                 onClick = {
                     waveletRunning = true
+                    waveletHint = null
                     vm.applyWaveletSkinRetouch(
                         textureKeep = waveletTextureKeep,
                         blemishSmooth = blemishSmooth,
                         toneEven = toneEven,
-                    ) { waveletRunning = false }
+                        onDone = { waveletRunning = false },
+                        onSkinCoverage = { coverage ->
+                            waveletHint = if (coverage < 0.05f) {
+                                "No skin tones detected — the photo was left unchanged. " +
+                                    "This tool only retouches skin."
+                            } else null
+                        },
+                    )
                 },
                 enabled = !waveletRunning,
                 modifier = Modifier.fillMaxWidth(),
@@ -365,6 +374,14 @@ fun RetouchPanel(
                 } else {
                     Text("Apply Wavelet Skin Retouch")
                 }
+            }
+            waveletHint?.let {
+                Text(
+                    it,
+                    style = Lumora.type.caption,
+                    color = Lumora.colors.textTertiary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
             }
         }
         // spot eraser: tap a retouch spot on the photo to delete just it

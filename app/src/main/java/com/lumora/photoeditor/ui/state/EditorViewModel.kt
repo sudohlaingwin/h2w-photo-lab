@@ -4894,6 +4894,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * - [blemishSmooth] 0..1: smooth mid scales (blemishes, blotchiness).
      * - [toneEven] 0..1: even out large-scale skin tone.
      *
+     * The retouch is gated by a skin-tone mask (YCrCb ellipsoid + feather):
+     * only skin regions are retouched — hair, eyes, lips, clothing and
+     * backgrounds come back bit-identical to the source.
+     *
+     * [onSkinCoverage] receives the fraction of the frame detected as skin
+     * (0..1) so the UI can warn when no skin was found (near no-op run).
+     *
      * Runs on Dispatchers.Default; result is undoable via the preview bitmap
      * stack. Calls [onDone] on the main thread when complete.
      */
@@ -4902,6 +4909,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         blemishSmooth: Float = 0.6f,
         toneEven: Float = 0.3f,
         onDone: () -> Unit = {},
+        onSkinCoverage: ((Float) -> Unit)? = null,
     ) {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
@@ -4930,8 +4938,28 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 // full-res copy for the whole wavelet run.
                 if (!bmp.isRecycled) bmp.recycle()
 
+                // Skin-region gate: build a per-pixel skin mask from the working
+                // pixels (YCrCb ellipsoid probability, round-half-up packed,
+                // feathered so edges blend invisibly). Non-skin pixels come
+                // back bit-identical — wavelet retouching no longer smooths
+                // hair, eyes, clothing or backgrounds.
+                val skinMask: FloatArray = run {
+                    val prob = FloatArray(sw * sh)
+                    var skinny = 0
+                    for (i in px.indices) {
+                        val p = px[i]
+                        val s = com.lumora.photoeditor.engine.AiProRetouch
+                            .skinProbability((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
+                        prob[i] = s
+                        if (s > 0.2f) skinny++
+                    }
+                    val coverage = if (prob.isNotEmpty()) skinny.toFloat() / prob.size else 0f
+                    withContext(Dispatchers.Main) { onSkinCoverage?.invoke(coverage) }
+                    com.lumora.photoeditor.engine.FastBlur.boxBlurFloat(prob, sw, sh, 3)
+                }
+
                 val retouched = com.lumora.photoeditor.engine.WaveletDecompose
-                    .retouchSkin(px, sw, sh, textureKeep, blemishSmooth, toneEven)
+                    .retouchSkin(px, sw, sh, textureKeep, blemishSmooth, toneEven, 5, skinMask)
 
                 // Scale back to original if we downscaled
                 val resultBmp = if (sw != w || sh != h) {

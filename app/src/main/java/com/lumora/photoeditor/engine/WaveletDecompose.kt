@@ -154,6 +154,11 @@ object WaveletDecompose {
      * [textureKeep] 0..1 — how much fine detail (scales 0-1: pores) to keep.
      * [blemishSmooth] 0..1 — how much to smooth mid scales (2-3: blemishes).
      * [toneEven] 0..1 — how much to even the residual (large-scale tone).
+     * [skinMask] optional per-pixel 0..1 weights (same length as src): the
+     *   retouch is blended against the PRISTINE source by these weights, so
+     *   non-skin regions (hair, eyes, lips, clothing, background) are left
+     *   bit-identical to the input. A null mask keeps the legacy behavior:
+     *   the whole image is retouched. A wrongly-sized mask is treated as null.
      * Returns retouched ARGB IntArray.
      */
     fun retouchSkin(
@@ -162,6 +167,7 @@ object WaveletDecompose {
         blemishSmooth: Float = 0.5f,
         toneEven: Float = 0.3f,
         numScales: Int = 5,
+        skinMask: FloatArray? = null,
     ): IntArray {
         val (details, residual) = decompose(src, w, h, numScales)
         val smoothing = FloatArray(numScales) { s ->
@@ -187,7 +193,36 @@ object WaveletDecompose {
         // flattened to the slider factor, the classic over-retouched wax look.
         // Coring keeps strong features (lip line, nostril shadow, eye corners)
         // and only crushes weak detail (grain, micro-blotchiness).
-        return reconstructCored(details, evenResidual, w, h, smoothing)
+        val retouched = reconstructCored(details, evenResidual, w, h, smoothing)
+
+        // Skin-region gating (2026-10-20): wavelet skin retouch used to run on
+        // the WHOLE image — backgrounds, hair and clothing were smoothed too,
+        // the "everything looks waxy" feel. When a mask is supplied, blend the
+        // retouched result against the pristine source: mask 0 restores the
+        // exact original bytes (bit-identical, no float drift), mask 1 keeps
+        // the full retouch, in-between blends linearly with round-half-up
+        // packing (matches the render-chain rounding sweep).
+        if (skinMask == null || skinMask.size != src.size) return retouched
+        val out = IntArray(src.size)
+        for (i in src.indices) {
+            val m = skinMask[i].coerceIn(0f, 1f)
+            when {
+                m >= 0.999f -> out[i] = retouched[i]
+                m <= 0.001f -> out[i] = src[i]
+                else -> {
+                    val a = retouched[i]
+                    val b = src[i]
+                    val br = ((b shr 16) and 0xFF).toFloat()
+                    val bg = ((b shr 8) and 0xFF).toFloat()
+                    val bb = (b and 0xFF).toFloat()
+                    val r = (br + (((a shr 16) and 0xFF) - br) * m).roundToInt().coerceIn(0, 255)
+                    val g = (bg + (((a shr 8) and 0xFF) - bg) * m).roundToInt().coerceIn(0, 255)
+                    val bl = (bb + ((a and 0xFF) - bb) * m).roundToInt().coerceIn(0, 255)
+                    out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or bl
+                }
+            }
+        }
+        return out
     }
 
     /**
