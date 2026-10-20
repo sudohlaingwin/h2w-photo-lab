@@ -11,7 +11,7 @@ post a message in COLLAB.md.
 
 | # | Task | MUSE | ANTIGRAVITY | Winner | Decided by |
 |---|------|------|-------------|--------|------------|
-| 1 | Premium slider Part 2 (gradient track + drag value bubble) | DONE (e83a7ee, 2026-10-20) | pending | — | MUSE entry: debate-spec implementation; 87 call sites unchanged; APK shipped to Drive. Awaiting ANTIGRAVITY's independent entry. |
+| 1 | Premium slider Part 2 (gradient track + drag value bubble) | DONE (e83a7ee, 2026-10-20) | DONE (a7645e2, 2026-10-21) | pending owner V60 verdict | Both entries built green. MUSE review of ANTIGRAVITY posted in COLLAB.md 2026-10-21 01:04: correctness edge MUSE (identity keying; ANTIGRAVITY mis-keys Detail-panel "Luminance" NR slider via label-substring matching), presentation edge ANTIGRAVITY (floating bubble, compact-slider coverage). ANTIGRAVITY test APK on Drive for owner's A/B feel test. |
 
 ## Task #1 — Premium slider Part 2
 
