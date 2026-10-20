@@ -53,8 +53,11 @@ object MaskEngine {
             if (override != null) {
                 // Incremental fast path: the accumulator already holds this
                 // component's strokes (caller-verified); quantize directly.
+                // Round-half-up pack (2026-10-20): the old .toInt() truncation
+                // biased mask alpha down by up to 1 level — same defect class
+                // as the render-chain round-half-up sweep.
                 for (i in tmp.indices)
-                    tmp[i] = (override.acc[i].coerceIn(0f, 1f) * 255f).toInt()
+                    tmp[i] = (override.acc[i].coerceIn(0f, 1f) * 255f).roundToInt()
             } else {
                 rasterComponent(comp, w, h, tmp, aiStore, srcLum)
             }
@@ -158,20 +161,25 @@ object MaskEngine {
                 // paint strokes into a float accumulator then quantize
                 val acc = FloatArray(w * h)
                 paintBrushStrokes(acc, w, h, comp, srcLum)
-                for (i in out.indices) out[i] = (acc[i].coerceIn(0f, 1f) * 255f).toInt()
+                // paint strokes into a float accumulator then quantize with
+                // round-half-up (2026-10-20), not truncation: the old .toInt()
+                // biased feathered brush edges ~1 level weak.
+                for (i in out.indices) out[i] = (acc[i].coerceIn(0f, 1f) * 255f).roundToInt()
             }
             MaskType.LINEAR_GRADIENT -> {
                 for (y in 0 until h) for (x in 0 until w) {
                     val f = ImageMath.linearGradientFactor(
                         x / w.toFloat(), y / h.toFloat(), comp.shape)
-                    out[y * w + x] = (f * 255f).toInt()
+                    // round-half-up pack (2026-10-20), not truncation
+                    out[y * w + x] = (f * 255f).roundToInt()
                 }
             }
             MaskType.RADIAL_GRADIENT -> {
                 for (y in 0 until h) for (x in 0 until w) {
                     val f = ImageMath.radialGradientFactor(
                         x / w.toFloat(), y / h.toFloat(), comp.shape)
-                    out[y * w + x] = (f * 255f).toInt()
+                    // round-half-up pack (2026-10-20), not truncation
+                    out[y * w + x] = (f * 255f).roundToInt()
                 }
             }
             MaskType.AI_SUBJECT, MaskType.AI_BACKGROUND,

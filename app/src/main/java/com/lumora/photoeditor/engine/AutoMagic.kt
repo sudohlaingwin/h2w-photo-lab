@@ -3,6 +3,7 @@ package com.lumora.photoeditor.engine
 import android.graphics.Bitmap
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -115,7 +116,12 @@ object AutoRetouch {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             val skinness = skinProbability(r, g, b)
-            maskPixels[i] = (skinness * 255).toInt().coerceIn(0, 255).toByte()
+            // Round-half-up pack (2026-10-20): the old .toInt() truncation
+            // biased every mask alpha down by up to 1 level — the same
+            // defect class as the render-chain round-half-up sweep
+            // (07579d5/aeba6d8/2eb8d51/2055e81/5298749). Auto-mask alpha
+            // must be nearest-level exact, not systematically weakened.
+            maskPixels[i] = (skinness * 255).roundToInt().coerceIn(0, 255).toByte()
         }
 
         // Feathering blur — sliding-window separable (O(w*h), bit-identical to
@@ -362,9 +368,12 @@ object CreativeEffects {
                 val glow = falloff * falloff * s
                 // Add some streaks (horizontal bands)
                 val streak = (0.5f + 0.5f * kotlin.math.sin(y * 0.05f + leak.x * 10f)) * 0.15f * glow
-                val r = (leak.r * (glow + streak) * 255).toInt().coerceIn(0, 255)
-                val g = (leak.g * (glow + streak) * 255).toInt().coerceIn(0, 255)
-                val b = (leak.b * (glow + streak) * 255).toInt().coerceIn(0, 255)
+                // Round-half-up pack (2026-10-20): the old .toInt() truncation
+                // biased the light-leak glow ~1 level dark — same defect class
+                // as the mask/render-chain round-half-up sweep.
+                val r = (leak.r * (glow + streak) * 255).roundToInt().coerceIn(0, 255)
+                val g = (leak.g * (glow + streak) * 255).roundToInt().coerceIn(0, 255)
+                val b = (leak.b * (glow + streak) * 255).roundToInt().coerceIn(0, 255)
                 pixels[y * w + x] = alpha or (r shl 16) or (g shl 8) or b
             }
         }
@@ -524,7 +533,9 @@ object AutoMask {
                 val skyLike = if (b > r && b > g && (mx - mn) > 20 && b > 90) {
                     ((mx - mn).toFloat() / 120f).coerceIn(0f, 1f)
                 } else 0f
-                mp[y * sw + x] = (skyLike * vWeight * 255).toInt().coerceIn(0, 255).toByte()
+                // Round-half-up pack (2026-10-20): same truncation-bias class as
+                // the skin-mask pack above — nearest-level exact alpha.
+                mp[y * sw + x] = (skyLike * vWeight * 255).roundToInt().coerceIn(0, 255).toByte()
             }
         }
         // Feather with box blur
@@ -586,8 +597,11 @@ object AutoMask {
     ): Bitmap {
         val mask = Bitmap.createBitmap(sw, sh, Bitmap.Config.ALPHA_8)
         val mp = ByteArray(sw * sh)
+        // Round-half-up pack (2026-10-20): the old .toInt() truncation biased
+        // every auto-mask alpha down by up to 1 level — the same defect
+        // class as the render-chain round-half-up sweep. Nearest-level exact.
         for (i in alpha.indices) {
-            mp[i] = (alpha[i].coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255).toByte()
+            mp[i] = (alpha[i].coerceIn(0f, 1f) * 255).roundToInt().coerceIn(0, 255).toByte()
         }
         if (feather > 0.01f) {
             val radius = (feather * 5).toInt().coerceIn(1, 5)
