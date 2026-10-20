@@ -288,7 +288,10 @@ object ImageMath {
                 m = m.coerceIn(0f, 1f)
                 // smoothstep the selection for soft edges
                 m = m * m * (3f - 2f * m)
-                out[i] = ((m * 255f).toInt() shl 24)
+                // Round-half-up pack (2026-10-20): the old .toInt() truncation
+                // biased the auto-sky alpha ~1 level weak — same defect class
+                // as the mask/render-chain round-half-up sweep.
+                out[i] = ((m * 255f).roundToInt() shl 24)
             }
             val m1 = Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
             try {
@@ -339,7 +342,8 @@ object ImageMath {
             // upper edge: fully selected at/below t (no cutoff when t >= 1)
             val upper = if (t >= 0.999f) 1f
             else 1f - smoothstep(t - tw / 2f, t + tw / 2f, luma)
-            out[i] = (min(lower, upper).coerceIn(0f, 1f) * 255f).toInt()
+            // Round-half-up pack (2026-10-20): same truncation-bias class.
+            out[i] = (min(lower, upper).coerceIn(0f, 1f) * 255f).roundToInt()
         }
         return out
     }
@@ -450,7 +454,8 @@ object ImageMath {
             // upper edge: fully selected at/below t (no cutoff when t >= 1)
             val upper = if (t >= 0.999f) 1f
             else 1f - smoothstep(t - tw / 2f, t + tw / 2f, d)
-            out[i] = (min(lower, upper).coerceIn(0f, 1f) * 255f).toInt()
+            // Round-half-up pack (2026-10-20): same truncation-bias class.
+            out[i] = (min(lower, upper).coerceIn(0f, 1f) * 255f).roundToInt()
         }
         return out
     }
@@ -565,7 +570,7 @@ object ImageMath {
                 if (cand < d) d = cand
             }
             out[i] = ((1f - smoothstep(radius - width / 2f, radius + width / 2f, d))
-                .coerceIn(0f, 1f) * 255f).toInt()
+                .coerceIn(0f, 1f) * 255f).roundToInt() // round-half-up (2026-10-20), not truncation
         }
         return out
     }
