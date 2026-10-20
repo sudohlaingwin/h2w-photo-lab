@@ -1,5 +1,6 @@
 package com.lumora.photoeditor.engine
 
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -81,7 +82,7 @@ object WatchdogPolicy {
     ): String =
         "black frame ${(frameMeanLuma * 100).roundToInt()}% over $TRIP_STREAK reads; " +
             "source ${(sourceLuma * 100).roundToInt()}%; ev=$exposureEv; " +
-            "aiGrade=$aiEnabled@${"%.2f".format(aiStrength)}; " +
+            "aiGrade=$aiEnabled@${"%.2f".format(Locale.US, aiStrength)}; " +
             "overlay=$overlayIdx; maskView=$maskView"
 
     /**

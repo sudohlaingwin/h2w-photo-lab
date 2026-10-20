@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -2955,7 +2956,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun fmt(v: Float): String =
-        (if (v > 0) "+" else "") + "%.2f".format(v)
+        // Locale.US: this summary is fed to the AI assistant as a structured
+        // prompt — a comma-decimal device locale must never produce
+        // "exposure=+0,35" where the model expects "+0.35".
+        (if (v > 0) "+" else "") + "%.2f".format(Locale.US, v)
 
     /**
      * Downscales the current preview bitmap to max 768px, JPEG-compresses,

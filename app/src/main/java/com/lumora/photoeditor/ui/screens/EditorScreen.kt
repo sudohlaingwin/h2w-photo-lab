@@ -65,6 +65,7 @@ import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.data.HistoryEntry
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import kotlinx.coroutines.launch
@@ -682,7 +683,7 @@ fun EditorScreen(
                                 } else {
                                     "Leveled by " +
                                         (if (rotate >= 0f) "+" else "") +
-                                        "%.1f".format(rotate) + "°"
+                                        "%.1f".format(Locale.US, rotate) + "°"
                                 }
                             } else {
                                 notice = "Points too close together — tap two distinct points"
