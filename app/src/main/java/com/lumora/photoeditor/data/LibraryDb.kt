@@ -88,6 +88,19 @@ interface LibraryDao {
     @Query("SELECT * FROM history WHERE imageId = :imageId ORDER BY timestamp DESC LIMIT 50")
     suspend fun history(imageId: String): List<HistoryEntry>
 
+    /**
+     * Keeps the history table bounded: every insert of a new edit entry
+     * must call this so rows older than the newest [keep] per image are
+     * dropped. Without it the table grows without bound (one row per
+     * committed edit) even though the UI only ever reads the newest 50.
+     */
+    @Query(
+        "DELETE FROM history WHERE imageId = :imageId AND rowId NOT IN " +
+            "(SELECT rowId FROM history WHERE imageId = :imageId " +
+            "ORDER BY timestamp DESC, rowId DESC LIMIT :keep)"
+    )
+    suspend fun pruneHistory(imageId: String, keep: Int)
+
     @Query("DELETE FROM history WHERE imageId = :imageId")
     suspend fun clearHistory(imageId: String)
 }

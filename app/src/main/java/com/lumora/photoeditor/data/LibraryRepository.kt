@@ -1074,6 +1074,9 @@ class LibraryRepository(
     suspend fun recordEdit(id: String, label: String, stateJson: String) {
         dao.addHistory(HistoryEntry(imageId = id, timestamp = System.currentTimeMillis(),
             label = label, stateJson = stateJson))
+        // Bound the table: UI only ever reads the newest 50 rows per image,
+        // so keep a generous 200 and drop older entries on every insert.
+        dao.pruneHistory(id, keep = 200)
         dao.touchEdited(id, System.currentTimeMillis())
         refresh()
     }
