@@ -276,6 +276,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     val proAutoApplied: StateFlow<Boolean> = _proAutoApplied.asStateFlow()
     private val _autoRetouchApplied = MutableStateFlow(false)
     val autoRetouchApplied: StateFlow<Boolean> = _autoRetouchApplied.asStateFlow()
+    private val _autoDenoiseApplied = MutableStateFlow(false)
+    val autoDenoiseApplied: StateFlow<Boolean> = _autoDenoiseApplied.asStateFlow()
     /** In-flight auto jobs, so a re-tap cancels the stale analysis first. */
     private var autoEnhanceJob: Job? = null
     private var proAutoJob: Job? = null
@@ -3239,6 +3241,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         _autoEnhanceApplied.value = false
         _proAutoApplied.value = false
         _autoRetouchApplied.value = false
+        _autoDenoiseApplied.value = false
         _aiProRetouchApplied.value = false
     }
 
@@ -3341,6 +3344,8 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         data class Applied(val summary: String) : AutoDenoiseOutcome
         data object NoChange : AutoDenoiseOutcome
         data object Failed : AutoDenoiseOutcome
+        data object Reverted : AutoDenoiseOutcome
+        data object Stale : AutoDenoiseOutcome
     }
 
     /**
@@ -3351,13 +3356,41 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * classical++ — no license-clean on-device denoise model exists, so no
      * AI is claimed). Applies ABSOLUTE slider targets as one undoable
      * "Auto denoise" edit: repeated taps converge on the same settings and
-     * can never stack. Always invoked on the main thread.
+     * can never stack.
+     *
+     * A true TOGGLE (user decision 2026-10-17, same contract as Auto
+     * Enhance / Pro Auto): the first tap applies the suggestion; the
+     * second tap reverts to the exact pre-auto state, as one undoable
+     * edit. Previously a second tap recomputed onto the current state —
+     * harmless for absolute targets, but it could never undo the auto
+     * result and left the header reading "Auto" while a denoise result
+     * was live. Always invoked on the main thread.
      */
     fun autoDenoise(onDone: (AutoDenoiseOutcome) -> Unit = {}) {
+        // Toggle-off: restore the pinned pre-auto snapshot. Captured
+        // before update(), which clears the baseline itself. Any
+        // in-flight analysis is cancelled so it cannot land on top of
+        // the revert.
+        if (_autoDenoiseApplied.value) {
+            val base = autoBaseline
+            autoDenoiseJob?.cancel()
+            _autoDenoiseApplied.value = false
+            if (base != null) {
+                update("Auto denoise off") { _ -> base }
+                onDone(AutoDenoiseOutcome.Reverted)
+            } else {
+                onDone(AutoDenoiseOutcome.Stale)
+            }
+            return
+        }
         // Same recycled-bitmap guard as applyAutoEnhance: analyze() reads
         // pixels on Dispatchers.Default while the UI thread may recycle
         // the live preview bitmap.
         val bmp = snapshotPreview() ?: run { onDone(AutoDenoiseOutcome.Failed); return }
+        // Capture on the main thread before the background analysis: every
+        // tap applies onto the pre-auto state, so the result is stable
+        // (idempotent) and the toggle-off restore is exact.
+        val base = autoBase()
         // Photo-change race: the noise estimate belongs to the photo open
         // at tap time; a mid-analysis photo switch must not overwrite the
         // new photo's NR sliders.
@@ -3386,17 +3419,29 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         return@withContext
                     }
                     if (settings != null) {
-                        val current = _state.value
-                        val next = current.copy(
-                            detail = current.detail.copy(
+                        val currentAtApply = _state.value
+                        // Apply onto the baseline, not the current state.
+                        val next = base.copy(
+                            detail = base.detail.copy(
                                 luminanceNr = settings.luminanceNr,
                                 colorNr = settings.colorNr,
                             ),
                         )
                         // Skip the undo entry + history spam when a re-tap
                         // recomputes the identical settings (idempotent).
-                        if (next != current) {
+                        if (next != currentAtApply) {
                             update("Auto denoise") { _ -> next }
+                        }
+                        // Re-pin the baseline only when the state wasn't
+                        // touched by the user between tap and apply: still
+                        // the tap-time state, or already the auto result.
+                        // Otherwise update() left it cleared, so the next
+                        // tap snapshots fresh. Only an actual change arms
+                        // the toggle — a no-op tap leaves nothing to revert.
+                        if (next != currentAtApply &&
+                            (currentAtApply == base || currentAtApply == next)) {
+                            autoBaseline = base
+                            _autoDenoiseApplied.value = true
                         }
                         onDone(AutoDenoiseOutcome.Applied(AutoDenoise.describe(settings)))
                     } else {

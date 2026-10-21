@@ -16,6 +16,10 @@ fun DetailPanel(vm: EditorViewModel) {
     val d = state.detail
     // One-tap auto-denoise feedback: what was suggested, or why nothing changed.
     var denoiseOutcome by remember { mutableStateOf<EditorViewModel.AutoDenoiseOutcome?>(null) }
+    // Toggle affordance: while an auto-denoise result is live, the header
+    // action reads "Undo Auto" (second tap reverts to the pre-auto state —
+    // user decision 2026-10-17, same as Auto Enhance).
+    val denoiseApplied by vm.autoDenoiseApplied.collectAsState()
     // Stale guard: the analysis may finish after the user opened another
     // photo — never show one photo's denoise verdict on the next.
     val libraryImage by vm.libraryImage.collectAsState()
@@ -26,8 +30,10 @@ fun DetailPanel(vm: EditorViewModel) {
             showReset = state.detail != DetailParams(),
             resetLabel = "Reset detail adjustments",
             onReset = { vm.update("Reset detail") { s -> s.copy(detail = DetailParams()) } },
-            actionLabel = "Auto",
-            actionContentDescription =
+            actionLabel = if (denoiseApplied) "Undo Auto" else "Auto",
+            actionContentDescription = if (denoiseApplied)
+                "Auto denoise is applied: tap to revert to the pre-auto state"
+            else
                 "Auto denoise: analyze this photo's noise and set noise reduction",
             onAction = {
                 denoiseOutcome = null
@@ -43,7 +49,11 @@ fun DetailPanel(vm: EditorViewModel) {
                     is EditorViewModel.AutoDenoiseOutcome.NoChange ->
                         "Already clean — no noise reduction needed"
                     is EditorViewModel.AutoDenoiseOutcome.Applied ->
-                        "Auto denoise: ${outcome.summary} — adjust or undo freely"
+                        "Auto denoise: ${outcome.summary} — tap Undo Auto to revert"
+                    is EditorViewModel.AutoDenoiseOutcome.Reverted ->
+                        "Auto denoise off — back to the pre-auto state"
+                    is EditorViewModel.AutoDenoiseOutcome.Stale ->
+                        "You edited after Auto denoise — use Undo to go back"
                 },
                 style = Lumora.type.caption,
                 color = if (failed) Lumora.colors.danger else Lumora.colors.textSecondary,
