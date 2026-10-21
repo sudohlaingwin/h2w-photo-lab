@@ -3,6 +3,7 @@ package com.lumora.photoeditor.data
 import com.lumora.photoeditor.engine.EditState
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /**
@@ -68,13 +69,19 @@ internal class EditSidecarIo(
     /**
      * Copies one image's edit sidecar onto another id (virtual copies).
      * Missing source file is fine — [load] starts fresh anyway.
-     * Returns false only on an I/O failure.
+     * Returns false only on an I/O failure. This covers Errors too, not
+     * just Exceptions: an OOM during the byte copy must degrade to a fresh
+     * edit state for the virtual copy (the caller already treats false
+     * that way) instead of escaping duplicatePhoto's Exception-only catch
+     * and failing the whole duplicate. CancellationException is rethrown —
+     * the EditStore wrapper runs on Dispatchers.IO.
      */
     fun copySidecar(fromId: String, toId: String): Boolean = try {
         val src = sidecarFile(fromId)
         if (src.exists()) src.copyTo(sidecarFile(toId), overwrite = true)
         true
-    } catch (_: Exception) {
+    } catch (e: Throwable) {
+        if (e is CancellationException) throw e
         false
     }
 
