@@ -1,5 +1,6 @@
 package com.lumora.photoeditor.ai
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -82,8 +83,15 @@ class GeminiClient {
                     )
                 }
                 Result.Success(suggestions, text)
-        } catch (e: Exception) {
-            Result.Failure("Network error: ${e.message?.take(150) ?: "unknown"}")
+        } catch (t: Throwable) {
+            // Throwable, not just Exception: an Error (e.g. OOM decoding a
+            // long reply) must still report as a Failure — the caller clears
+            // the assistant's loading spinner only on a returned Result, so
+            // an escaping Error would leave it stuck loading forever and
+            // block all later AI use (isLoading guard). Cancellation is
+            // still rethrown; matches the ViewModel-side Throwable widening.
+            if (t is CancellationException) throw t
+            Result.Failure("Network error: ${t.message?.take(150) ?: "unknown"}")
         }
     }
 
@@ -147,8 +155,12 @@ class GeminiClient {
                     ?: return@withContext Result.Failure("Empty response from Gemini")
                 // Wrap free-text reply as suggestions with only analysis filled.
                 Result.Success(AiSuggestions(analysis = text), text)
-        } catch (e: Exception) {
-            Result.Failure("Network error: ${e.message?.take(150) ?: "unknown"}")
+        } catch (t: Throwable) {
+            // Throwable, not just Exception: same stuck-loading contract as
+            // analyzePhoto above — an Error must report as a Failure so the
+            // caller clears isLoading. Cancellation is still rethrown.
+            if (t is CancellationException) throw t
+            Result.Failure("Network error: ${t.message?.take(150) ?: "unknown"}")
         }
     }
 
@@ -202,10 +214,14 @@ class GeminiClient {
             } finally {
                 conn.disconnect()
             }
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            // Throwable, not just Exception: an Error during discovery must
+            // fall back to the hardcoded list like any other failure, not
+            // fail the whole assistant call. Cancellation is still rethrown.
             // Cache the fallback too (matches the documented per-key session
             // caching and the non-2xx path): when offline, the next assistant
             // call must not re-run the 15s-timeout ListModels GET first.
+            if (t is CancellationException) throw t
             MODELS.also { cachedModels = apiKey to it }
         }
         cachedModels = apiKey to discovered
@@ -260,9 +276,13 @@ class GeminiClient {
                 } finally {
                     conn.disconnect()
                 }
-            } catch (e: Exception) {
-                // Network failure on this model → try next.
-                lastText = e.message ?: "network error"
+            } catch (t: Throwable) {
+                // Throwable, not just Exception: an Error on one model (e.g.
+                // OOM reading a large error stream) must fall through to the
+                // next model like a network failure, not abort discovery.
+                // Cancellation is still rethrown.
+                if (t is CancellationException) throw t
+                lastText = t.message ?: "network error"
             }
         }
         if (!gotHttpResponse) return Triple(NO_HTTP_RESPONSE, lastText, lastModel)
