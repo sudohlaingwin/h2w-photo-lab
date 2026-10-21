@@ -715,6 +715,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             ExifInterface.ORIENTATION_ROTATE_270 -> m.postRotate(270f)
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.postScale(-1f, 1f)
             ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
+            // Mirrored rotations (front-camera / mirrored captures): previously
+            // fell through to `else -> return bmp`, leaving the preview
+            // un-oriented. Mirrors ExportManager.applyOrientation exactly.
+            ExifInterface.ORIENTATION_TRANSPOSE -> { m.postRotate(90f); m.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
             else -> return bmp
         }
         return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
