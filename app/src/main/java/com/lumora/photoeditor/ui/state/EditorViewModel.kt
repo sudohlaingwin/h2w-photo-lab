@@ -4994,6 +4994,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         toneEven: Float = 0.3f,
         onDone: () -> Unit = {},
         onSkinCoverage: ((Float) -> Unit)? = null,
+        /** Fires on the Main thread only when the retouched bitmap actually
+         *  lands in the preview (not on the stale-photo, no-snapshot, or
+         *  failure paths), so the panel can confirm the tap did something —
+         *  previously Apply gave no feedback at all on success, and the
+         *  user could not tell a retouch had landed or that Undo last
+         *  steps back over it. */
+        onApplied: (() -> Unit)? = null,
     ) {
         // Private snapshot: the worker reads pixels on Dispatchers.Default
         // while the UI thread may recycle the live preview bitmap.
@@ -5082,6 +5089,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     _preview.value?.recycle()
                     _preview.value = resultBmp
                     requestRender()
+                    onApplied?.invoke()
                     onDone()
                 }
             } catch (t: Throwable) {

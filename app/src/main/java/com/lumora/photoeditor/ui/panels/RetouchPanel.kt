@@ -303,6 +303,11 @@ fun RetouchPanel(
         var blemishSmooth by remember { mutableStateOf(0.6f) }
         var toneEven by remember { mutableStateOf(0.3f) }
         var waveletHint by remember { mutableStateOf<String?>(null) }
+        // Tracks the no-skin outcome so the success note below never
+        // overwrites it: onSkinCoverage fires before the retouch lands,
+        // onApplied after, and a near-zero skin mask means the photo came
+        // back effectively unchanged even though the apply "succeeded".
+        var waveletNoSkin by remember { mutableStateOf(false) }
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -348,16 +353,28 @@ fun RetouchPanel(
                 onClick = {
                     waveletRunning = true
                     waveletHint = null
+                    waveletNoSkin = false
                     vm.applyWaveletSkinRetouch(
                         textureKeep = waveletTextureKeep,
                         blemishSmooth = blemishSmooth,
                         toneEven = toneEven,
                         onDone = { waveletRunning = false },
                         onSkinCoverage = { coverage ->
+                            waveletNoSkin = coverage < 0.05f
                             waveletHint = if (coverage < 0.05f) {
                                 "No skin tones detected — the photo was left unchanged. " +
                                     "This tool only retouches skin."
                             } else null
+                        },
+                        // Success feedback (previously none): Apply used to
+                        // leave the panel silent, so a subtle retouch looked
+                        // like a dead tap — and nothing said Undo last steps
+                        // back over this bitmap-level retouch.
+                        onApplied = {
+                            if (!waveletNoSkin) {
+                                waveletHint = "Wavelet retouch applied — " +
+                                    "Undo last steps back to the photo before this retouch."
+                            }
                         },
                     )
                 },
