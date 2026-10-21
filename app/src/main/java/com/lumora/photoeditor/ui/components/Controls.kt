@@ -462,7 +462,7 @@ fun semanticTrackBrush(
                 Color(0xFFC026D3), // Deep Magenta
             )
         )
-        key.contains("hue") -> Brush.horizontalGradient(
+        key == "hue" -> Brush.horizontalGradient(
             listOf(
                 Color(0xFFFF0000), // Red
                 Color(0xFFFFFF00), // Yellow
@@ -474,7 +474,7 @@ fun semanticTrackBrush(
             )
         )
         key.contains("exposure") || key.contains("highlight") || key.contains("white") ||
-            key.contains("bright") || key.contains("luminance") -> Brush.horizontalGradient(
+            key.contains("bright") -> Brush.horizontalGradient(
             listOf(
                 Color(0xFF1E293B), // Deep Shadow Slate
                 Color(0xFF64748B), // Midtone
@@ -504,7 +504,8 @@ fun semanticTrackBrush(
             )
         )
         key.contains("clarity") || key.contains("texture") || key.contains("dehaze") ||
-            key.contains("sharpen") || key.contains("deconv") || key.contains("detail") -> Brush.horizontalGradient(
+            key.contains("sharpen") || key.contains("deconv") || key.contains("detail") ||
+            key.contains("luminance") || key.contains("noise") -> Brush.horizontalGradient(
             listOf(
                 Color(0xFF0D9488), // Deep Teal
                 Color(0xFF2DD4BF), // Crisp Cyan
