@@ -578,9 +578,13 @@ private fun AiKeySettings(container: AppContainer) {
                                         msg = com.lumora.photoeditor.ai.friendlyGeminiHttpError(code)
                                         break
                                     }
-                                } catch (e: Exception) {
-                                    if (e is CancellationException) throw e // don't swallow coroutine cancellation
-                                    msg = "Network error: ${e.message?.take(80)}"
+                                } catch (t: Throwable) {
+                                    // Throwable, not just Exception: mirrors the
+                                    // testAiConnection fix — an Error on one model
+                                    // must fall through to the next model, not
+                                    // abort discovery. Cancellation still rethrown.
+                                    if (t is CancellationException) throw t
+                                    msg = "Network error: ${t.message?.take(80)}"
                                 }
                             }
                             if (ok) true to "Connected! Gemini is ready ($usedModel)"
@@ -588,9 +592,14 @@ private fun AiKeySettings(container: AppContainer) {
                                 com.lumora.photoeditor.ai.friendlyNoGeminiModelFound()
                             }
                         }
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e // don't swallow coroutine cancellation
-                        false to "Network error: ${e.message?.take(80)}"
+                    } catch (t: Throwable) {
+                        // Throwable, not just Exception: this launch has no
+                        // exception handler, and the testing=false reset below
+                        // only runs if this catch fires — an Error here
+                        // previously left "Testing…" stuck forever.
+                        // Cancellation still rethrown.
+                        if (t is CancellationException) throw t
+                        false to "Network error: ${t.message?.take(80)}"
                     }
                     withContext(Dispatchers.Main) {
                         testing = false
