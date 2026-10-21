@@ -1254,9 +1254,16 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * one undoable "Auto straighten" edit. Replaces rotate/rotate90 like the
      * guided straighten does; flips are accounted for. [onNoHorizon] fires on
      * Main when no confident horizon was found — nothing is changed, so the
-     * UI can say so honestly instead of guessing.
+     * UI can say so honestly instead of guessing. [onError] fires on Main
+     * when the analysis itself fails (an Error, e.g. OOM in the working
+     * buffers): it must stay distinct from [onNoHorizon], because reporting
+     * "no clear horizon" for a failed analysis would mislead the user into
+     * drawing a line for a photo whose horizon was never actually checked.
      */
-    fun autoStraighten(onNoHorizon: () -> Unit = {}) {
+    fun autoStraighten(
+        onNoHorizon: () -> Unit = {},
+        onError: () -> Unit = {},
+    ) {
         val bmp = _preview.value ?: return
         // Photo-change race: the horizon belongs to the photo open at tap
         // time; a mid-analysis photo switch must not rotate the new photo.
@@ -1276,18 +1283,27 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                 if (t is CancellationException) throw t
                 return@guardLaunch
             }
-            val level = try {
-                Straighten.detectHorizon(px, w, h)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e // don't swallow coroutine cancellation
-                null
+            var level: Straighten.AutoLevel? = null
+            var analysisFailed = false
+            try {
+                level = Straighten.detectHorizon(px, w, h)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t // don't swallow coroutine cancellation
+                // An Error (e.g. OOM in the working buffers) must not escape
+                // to scopeGuard, which only logs: the tap would silently do
+                // nothing. It also must not masquerade as "no horizon" —
+                // see the [onError] contract above.
+                level = null
+                analysisFailed = true
             }
             withContext(Dispatchers.Main) {
-                // Stale: stay silent — onNoHorizon would misreport a
-                // missing horizon on the newly opened photo.
+                // Stale: stay silent — onNoHorizon/onError would misreport
+                // on the newly opened photo.
                 if (stalePhoto(tapPhotoId)) return@withContext
                 val l = level
-                if (l == null) {
+                if (analysisFailed) {
+                    onError()
+                } else if (l == null) {
                     onNoHorizon()
                 } else {
                     val g = _state.value.geometry

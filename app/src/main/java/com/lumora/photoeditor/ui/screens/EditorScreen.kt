@@ -968,9 +968,14 @@ fun EditorScreen(
                         vm,
                         onStraighten = { straightenMode = true },
                         onAutoStraighten = {
-                            vm.autoStraighten {
-                                notice = "No clear horizon found — try \"Draw a line to straighten\""
-                            }
+                            vm.autoStraighten(
+                                onNoHorizon = {
+                                    notice = "No clear horizon found — try \"Draw a line to straighten\""
+                                },
+                                onError = {
+                                    notice = "Couldn't analyze this photo — please try again"
+                                },
+                            )
                         },
                         onPerspectiveGuide = { perspectiveGuide = PerspectiveAxis.Vertical },
                         onPerspectiveGuideH = { perspectiveGuide = PerspectiveAxis.Horizontal },
