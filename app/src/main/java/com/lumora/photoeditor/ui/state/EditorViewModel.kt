@@ -722,8 +722,18 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
             else -> return bmp
         }
-        return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-            .also { bmp.recycle() }
+        // The rotated copy is a second full-preview-size allocation: on a
+        // low-memory device it can throw OutOfMemoryError. open()'s outer
+        // Throwable catch already turns that into the friendly OOM notice,
+        // but the decoded source would leak (never recycled, never stored)
+        // exactly when memory is scarcest — recycle it before rethrowing.
+        return try {
+            Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+                .also { bmp.recycle() }
+        } catch (t: Throwable) {
+            if (!bmp.isRecycled) bmp.recycle()
+            throw t
+        }
     }
 
     /**
@@ -791,8 +801,16 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             val scale = maxDim / maxOf(bmp.width, bmp.height).toFloat()
             val sw = (bmp.width * scale).toInt().coerceAtLeast(1)
             val sh = (bmp.height * scale).toInt().coerceAtLeast(1)
-            return Bitmap.createScaledBitmap(bmp, sw, sh, true)
-                .also { bmp.recycle() }
+            // Same leak as the BitmapFactory path above: if the downscale
+            // allocation OOMs, open()'s catch shows the friendly notice but
+            // the full-size LibRaw decode would leak — recycle it first.
+            return try {
+                Bitmap.createScaledBitmap(bmp, sw, sh, true)
+                    .also { bmp.recycle() }
+            } catch (t: Throwable) {
+                if (!bmp.isRecycled) bmp.recycle()
+                throw t
+            }
         } finally {
             try { tmp.delete() } catch (_: Exception) { }
         }
