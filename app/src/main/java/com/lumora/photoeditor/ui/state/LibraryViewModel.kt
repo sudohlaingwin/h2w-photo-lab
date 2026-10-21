@@ -534,8 +534,12 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
      * [Presets.apply] — the exact same semantics as applying a preset in the
      * editor panel — so partial strengths fade the look in, and each photo's
      * history records "Apply preset: <name>". Per-photo try/catch: one corrupt
-     * sidecar must not abort the rest of the batch. onDone receives the number
-     * of photos updated.
+     * sidecar must not abort the rest of the batch. Caught as Throwable, not
+     * just Exception (same pattern as the sibling batch paths deleteMany,
+     * favoriteMany, duplicate, and applyCopiedEdits): an Error on one photo
+     * must neither abort the remaining photos nor skip onDone — the caller
+     * clears the selection and shows the result notice only from onDone, so
+     * skipping it would leave selection mode stuck with no feedback.
      */
     fun applyPresetToMany(
         ids: Set<String>,
@@ -558,8 +562,8 @@ class LibraryViewModel(private val container: AppContainer) : ViewModel() {
                     n++
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
-                    // One bad sidecar must not abort the rest of the batch.
+                } catch (_: Throwable) {
+                    // One bad photo must not abort the rest of the batch.
                 }
             }
             // Sidecars changed behind the grid's back: any cached edited
