@@ -2180,7 +2180,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         aiKey = key))
                 }
                 _aiUi.value = AiUiState.Idle
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
                 _aiUi.value = AiUiState.Error(
                     e.message ?: "Could not build the mask — try again.")
@@ -2225,7 +2225,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     )
                 }
                 _aiUi.value = AiUiState.Idle
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
                 // The failure messages already point at manual masks, so back
                 // the card with a one-tap "Paint a mask" recovery instead of
@@ -2494,7 +2494,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         colorFeather = defaultColorFeather)))
                 }
                 _aiUi.value = AiUiState.Idle
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
                 _aiUi.value = AiUiState.Error(
                     "Could not build the color mask — try again.")
@@ -2533,7 +2533,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         colorFeather = defaultColorFeather))
                 }
                 _aiUi.value = AiUiState.Idle
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (e is CancellationException) throw e // don't swallow coroutine cancellation
                 _aiUi.value = AiUiState.Error(
                     "Could not build the color mask — try again.")
