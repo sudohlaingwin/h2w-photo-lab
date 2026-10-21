@@ -54,6 +54,19 @@ class AppSettings(context: Context) {
         _cropOverlayStyle.value = v
     }
 
+    /** Composition grid over the preview in any tool mode (rule of thirds,
+     *  drawn on the same displayed-photo quad as the straighten alignment
+     *  grid). Crop mode keeps its own overlay (with dimming + frame), so
+     *  the general grid suppresses itself there; persisted like the crop
+     *  overlay style so the preference survives restarts. */
+    private val _showGrid = MutableStateFlow(prefs.getBoolean("show_grid", false))
+    val showGrid: StateFlow<Boolean> = _showGrid.asStateFlow()
+
+    fun setShowGrid(v: Boolean) {
+        prefs.edit().putBoolean("show_grid", v).apply()
+        _showGrid.value = v
+    }
+
     companion object {
         const val CROP_OVERLAY_THIRDS = 0
         const val CROP_OVERLAY_GRID = 1

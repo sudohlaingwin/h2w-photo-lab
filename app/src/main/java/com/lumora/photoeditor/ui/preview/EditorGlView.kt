@@ -161,6 +161,12 @@ fun EditorGlView(
     /** Crop overlay grid style (AppSettings CROP_OVERLAY_*): which
      *  composition guide the crop overlay draws. */
     cropOverlayStyle: Int = 0,
+    /** Composition grid over the preview in any tool mode (rule of
+     *  thirds on the displayed-photo quad, same report path as the
+     *  straighten alignment grid). Suppressed in Crop mode (which draws
+     *  its own guide) and in Straighten mode (which draws thirds plus a
+     *  center cross), so guides never double-draw. */
+    showGrid: Boolean = false,
     /** Fired (on the main thread) with true when the crop quad has any
      *  corner outside the photo — those corners render black in
      *  preview/export. The host uses it to surface the warning in the
@@ -441,9 +447,13 @@ fun EditorGlView(
                     cropOob = null
                     onCropOob(false)
                 }
-                view.alignGridEnabled = touchMode == PreviewTouchMode.Straighten
+                // The alignment grid also serves the general composition
+                // grid toggle: same displayed-photo quad, same report
+                // path — only the drawing block below differs.
+                view.alignGridEnabled =
+                    touchMode == PreviewTouchMode.Straighten || showGrid
                 view.onAlignGrid = { alignGrid = it }
-                if (touchMode != PreviewTouchMode.Straighten) alignGrid = null
+                if (touchMode != PreviewTouchMode.Straighten && !showGrid) alignGrid = null
                 view.reportAlignGrid()
                 view.onFocusStart = onFocusStart
                 view.onFocusDrag = onFocusDrag
@@ -745,6 +755,34 @@ fun EditorGlView(
                     ).forEach { (a, b) ->
                         drawLine(halo, a, b, strokeWidth = 3.5f)
                         drawLine(cross, a, b, strokeWidth = 2f)
+                    }
+                }
+            }
+        }
+        // General composition grid: rule-of-thirds lines over the
+        //  displayed photo while editing in any tool mode (Lightroom's
+        //  always-on grid). Thin white with a dark halo and NO dimming,
+        //  so the photo stays fully visible — the same treatment as the
+        //  straighten grid, minus its center cross. Crop and Straighten
+        //  modes draw their own guides above, so this stays off there
+        //  to avoid double-drawn lines.
+        if (showGrid && touchMode != PreviewTouchMode.Crop &&
+            touchMode != PreviewTouchMode.Straighten
+        ) {
+            alignGrid?.let { q ->
+                Canvas(Modifier.fillMaxSize()) {
+                    fun lerp(a: Offset, b: Offset, t: Float) =
+                        Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+                    val halo = Color.Black.copy(alpha = 0.45f)
+                    val thirds = Color.White.copy(alpha = 0.7f)
+                    listOf(1f / 3f, 2f / 3f).forEach { t ->
+                        listOf(
+                            lerp(q[0], q[1], t) to lerp(q[2], q[3], t),
+                            lerp(q[0], q[2], t) to lerp(q[1], q[3], t),
+                        ).forEach { (a, b) ->
+                            drawLine(halo, a, b, strokeWidth = 3f)
+                            drawLine(thirds, a, b, strokeWidth = 1.5f)
+                        }
                     }
                 }
             }

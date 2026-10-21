@@ -2012,6 +2012,14 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         container.settings.setCropOverlayStyle(style)
     }
 
+    /** Composition grid over the preview in any tool mode — a Compose
+     *  overlay (not GL), so no re-render is needed when toggling. */
+    val showGrid: StateFlow<Boolean> = container.settings.showGrid
+
+    fun setShowGrid(v: Boolean) {
+        container.settings.setShowGrid(v)
+    }
+
     /** Pin markers on every retouch spot — a Compose overlay (not GL), so no
      *  re-render is needed when toggling. Makes the "Erase spot" mode
      *  usable: spots are visible targets to tap instead of blind guesses. */

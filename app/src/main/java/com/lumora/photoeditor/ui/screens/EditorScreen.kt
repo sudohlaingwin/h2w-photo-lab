@@ -125,6 +125,7 @@ fun EditorScreen(
     val showRetouchSpots by vm.showRetouchSpots.collectAsState()
     val clipMode by vm.clipMode.collectAsState()
     val cropOverlayStyle by vm.cropOverlayStyle.collectAsState()
+    val showGrid by vm.showGrid.collectAsState()
     val rating by vm.rating.collectAsState()
     val histogram by vm.histogram.collectAsState()
     val scopesLive by vm.scopesLive.collectAsState()
@@ -329,6 +330,8 @@ fun EditorScreen(
             onUndo = vm::undo,
             onRedo = vm::redo,
             onClip = vm::setClipMode,
+            showGrid = showGrid,
+            onToggleGrid = { vm.setShowGrid(!showGrid) },
             onCompareHold = { vm.setShowOriginal(it) },
             onToggleSplit = { toggleSplit() },
             splitActive = splitXNdc != null,
@@ -460,6 +463,8 @@ fun EditorScreen(
                         // Crop overlay composition guide (thirds/grid/
                         // diagonal/golden) — persisted user preference.
                         cropOverlayStyle = cropOverlayStyle,
+                        // General composition grid (any tool mode).
+                        showGrid = showGrid,
                         // warn when the crop quad leaves the photo (those
                         // corners render black in preview/export)
                         onCropOob = { cropHasOob = it },
@@ -1570,6 +1575,8 @@ private fun EditorToolbar(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onClip: (Int) -> Unit,
+    showGrid: Boolean,
+    onToggleGrid: () -> Unit,
     onCompareHold: (Boolean) -> Unit,
     onToggleSplit: () -> Unit,
     splitActive: Boolean,
@@ -1684,6 +1691,14 @@ private fun EditorToolbar(
                     text = "Reset all edits",
                     icon = Icons.Default.Refresh,
                     onClick = { onResetAll(); overflowMenu = false },
+                )
+                // Composition grid over the preview (rule of thirds) —
+                // a view aid only, never baked into exports. State in
+                // the label's stateDescription so TalkBack announces it.
+                LumoraDropdownMenuItem(
+                    text = "Show grid",
+                    stateDescription = if (showGrid) "On" else "Off",
+                    onClick = { onToggleGrid(); overflowMenu = false },
                 )
                 LumoraDropdownMenuItem(
                     text = "History",
