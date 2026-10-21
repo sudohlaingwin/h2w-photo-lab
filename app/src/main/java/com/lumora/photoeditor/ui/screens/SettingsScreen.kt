@@ -707,8 +707,18 @@ private fun SyncSettingsSection(container: AppContainer) {
     suspend fun refreshSnapshot() {
         // deviceId() generates the stable install id once, so the row
         // never shows a blank id after the first open.
-        engine.deviceId()
-        snapshot = engine.snapshot()
+        // Guarded: this runs in a bare LaunchedEffect AND in the Sync-now
+        // tap, both with no exception handler — an unexpected throw (the
+        // engine claims never-throws, but that contract covers today's
+        // no-backend path, not a future backend or an Error) must degrade
+        // to the "…" placeholders, never crash Settings on open.
+        try {
+            engine.deviceId()
+            snapshot = engine.snapshot()
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            android.util.Log.w("SyncSettings", "sync snapshot failed", t)
+        }
     }
 
     LaunchedEffect(Unit) { refreshSnapshot() }
@@ -752,6 +762,16 @@ private fun SyncSettingsSection(container: AppContainer) {
                     notice = com.lumora.photoeditor.data.sync
                         .describeSyncOutcome(engine.syncNow())
                     refreshSnapshot()
+                } catch (t: Throwable) {
+                    // The engine claims never-throws, but this launch has
+                    // no exception handler: any throw escaping that contract
+                    // (a future backend, an Error) would otherwise crash
+                    // Settings on a Sync-now tap instead of reporting.
+                    // Cancellation still propagates; the finally below
+                    // clears the spinner either way.
+                    if (t is kotlinx.coroutines.CancellationException) throw t
+                    android.util.Log.w("SyncSettings", "sync failed", t)
+                    notice = "Sync failed: ${t.message ?: "unexpected error"} — try again"
                 } finally {
                     syncing = false
                 }
