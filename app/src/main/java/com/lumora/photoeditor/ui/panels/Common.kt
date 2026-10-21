@@ -29,6 +29,14 @@ fun ParamSlider(
     range: ClosedFloatingPointRange<Float> = -100f..100f,
     historyLabel: String = label,
     default: Float = 0f,
+    /**
+     * Absolute readout override (e.g. "50%"): for sliders whose value is an
+     * absolute quantity (strength, blending, opacity), not a bipolar
+     * adjustment pushed from a default. Without it the pill shows the
+     * push-from-default % — "−50%" for a 50% strength — the same wart the
+     * export/watermark/look-transfer sliders already avoid via [valueText].
+     */
+    valueText: String? = null,
     update: (EditState, Float) -> EditState,
 ) {
     LumoraSlider(
@@ -36,6 +44,7 @@ fun ParamSlider(
         value = value,
         valueRange = range,
         default = default,
+        valueText = valueText,
         // Premium slider Part 2: the historyLabel is the most discriminating
         // parameter identity, so it keys the gradient resolution (Tier 2).
         gradientKey = historyLabel,

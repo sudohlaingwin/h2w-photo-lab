@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.dp
 import com.lumora.photoeditor.engine.GradingParams
 import com.lumora.photoeditor.ui.components.GradeWheelControl
 import com.lumora.photoeditor.ui.state.EditorViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun GradePanel(vm: EditorViewModel) {
@@ -58,7 +59,8 @@ fun GradePanel(vm: EditorViewModel) {
             ParamSlider(vm, "Balance", g.balance, historyLabel = "Grading balance") { s, v ->
                 s.copy(grading = s.grading.copy(balance = v))
             }
-            ParamSlider(vm, "Blending", g.blending, 0f..100f, "Grading blending", default = 100f) { s, v ->
+            ParamSlider(vm, "Blending", g.blending, 0f..100f, "Grading blending", default = 100f,
+                valueText = "${g.blending.roundToInt()}%") { s, v ->
                 s.copy(grading = s.grading.copy(blending = v))
             }
         }

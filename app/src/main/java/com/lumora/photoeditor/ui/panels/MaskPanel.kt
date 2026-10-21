@@ -233,6 +233,9 @@ fun MaskPanel(
                         value = overlayAlpha * 100f,
                         valueRange = 5f..100f,
                         default = 35f,
+                        // Absolute opacity, not a push from the 35% default:
+                        // without this 55% opacity read "+31%".
+                        valueText = "${(overlayAlpha * 100f).roundToInt()}%",
                         onValueChange = { v -> vm.setMaskOverlayAlpha(v / 100f) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -536,6 +539,9 @@ private fun MaskQuickControls(vm: EditorViewModel, mask: Mask) {
             value = mask.amount * 100f,
             valueRange = 0f..100f,
             default = 100f,
+            // Absolute mask strength (Lightroom "Amount"): 50% strength
+            // must read "50%", not the push-from-100% "−50%".
+            valueText = "${(mask.amount * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.update(gesture = true) { s ->
@@ -682,10 +688,17 @@ private fun MaskEditor(
             // the value pill rendered accent-tinted as "modified" on first
             // open and double-tap reset pushed sliders to 0 (a near-invisible
             // brush) instead of the real defaults.
-            SliderRow("Size", brushSize, 0.01f..0.4f, onBrushSize, default = 0.08f)
-            SliderRow("Feather", brushFeather, 0f..1f, onBrushFeather, default = 0.5f)
-            SliderRow("Flow", brushFlow, 0.05f..1f, onBrushFlow, default = 0.85f)
-            SliderRow("Opacity", brushOpacity, 0.05f..1f, onBrushOpacity, default = 1f)
+            // Brush sizes are absolute quantities (the caption above already
+            // reads "20% of photo width"): the pills must match it, not the
+            // push-from-default % (a 20% brush read "+38%").
+            SliderRow("Size", brushSize, 0.01f..0.4f, onBrushSize, default = 0.08f,
+                valueText = "${(brushSize * 100).roundToInt()}%")
+            SliderRow("Feather", brushFeather, 0f..1f, onBrushFeather, default = 0.5f,
+                valueText = "${(brushFeather * 100).roundToInt()}%")
+            SliderRow("Flow", brushFlow, 0.05f..1f, onBrushFlow, default = 0.85f,
+                valueText = "${(brushFlow * 100).roundToInt()}%")
+            SliderRow("Opacity", brushOpacity, 0.05f..1f, onBrushOpacity, default = 1f,
+                valueText = "${(brushOpacity * 100).roundToInt()}%")
             // Pro auto-mask: edge-aware brush that hugs tone boundaries.
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                 LumoraChip(
@@ -701,7 +714,8 @@ private fun MaskEditor(
                 // gradients. Percentage pill + double-tap reset come from
                 // LumoraSlider like the other brush controls.
                 SliderRow("Tolerance", brushAutoMaskTolerance, 0.02f..0.5f,
-                    onBrushAutoMaskTolerance, default = 0.14f)
+                    onBrushAutoMaskTolerance, default = 0.14f,
+                    valueText = "${(brushAutoMaskTolerance * 100).roundToInt()}%")
             }
             Text(
                 if (brushAutoMask)
@@ -754,6 +768,7 @@ private fun MaskEditor(
                 value = gradComp.shape.getOrElse(5) { 0.5f } * 100f,
                 valueRange = 0f..100f,
                 default = 50f,
+                valueText = "${(gradComp.shape.getOrElse(5) { 0.5f } * 100f).roundToInt()}%",
                 onBegin = { vm.beginGesture() },
                 onValueChange = { v ->
                     vm.updateGradientFeather(mask.id, gradComp.id, v / 100f)
@@ -797,6 +812,7 @@ private fun MaskEditor(
             value = lumaComp.lumaHi * 100f,
             valueRange = 0f..100f,
             default = 100f,
+            valueText = "${(lumaComp.lumaHi * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateLuminanceRange(mask.id, lumaComp.id, lumaComp.lumaLo,
@@ -812,6 +828,7 @@ private fun MaskEditor(
             value = lumaComp.lumaFeather * 100f,
             valueRange = 0f..100f,
             default = 50f,
+            valueText = "${(lumaComp.lumaFeather * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateLuminanceRange(mask.id, lumaComp.id, lumaComp.lumaLo,
@@ -860,6 +877,7 @@ private fun MaskEditor(
             value = depthComp.depthHi * 100f,
             valueRange = 0f..100f,
             default = 100f,
+            valueText = "${(depthComp.depthHi * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateDepthRange(mask.id, depthComp.id, depthComp.depthLo,
@@ -875,6 +893,7 @@ private fun MaskEditor(
             value = depthComp.depthFeather * 100f,
             valueRange = 0f..100f,
             default = 50f,
+            valueText = "${(depthComp.depthFeather * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateDepthRange(mask.id, depthComp.id, depthComp.depthLo,
@@ -971,6 +990,7 @@ private fun MaskEditor(
             value = colorComp.colorTolerance * 100f,
             valueRange = 0f..100f,
             default = 45f,
+            valueText = "${(colorComp.colorTolerance * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateColorRange(mask.id, colorComp.id,
@@ -986,6 +1006,7 @@ private fun MaskEditor(
             value = colorComp.colorFeather * 100f,
             valueRange = 0f..100f,
             default = 50f,
+            valueText = "${(colorComp.colorFeather * 100f).roundToInt()}%",
             onBegin = { vm.beginGesture() },
             onValueChange = { v ->
                 vm.updateColorRange(mask.id, colorComp.id,
@@ -1004,6 +1025,8 @@ private fun MaskEditor(
         value = mask.amount * 100f,
         valueRange = 0f..100f,
         default = 100f,
+        // Absolute strength: 50% must read "50%", not "−50%".
+        valueText = "${(mask.amount * 100f).roundToInt()}%",
         onBegin = { vm.beginGesture() },
         onValueChange = { v ->
             vm.update(gesture = true) { s ->
@@ -1191,10 +1214,10 @@ private fun LocalSlider(
 }
 
 @Composable
-private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, default: Float = 0f) {
+private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, default: Float = 0f, valueText: String? = null) {
     com.lumora.photoeditor.ui.components.LumoraSlider(
         label = label, value = value, valueRange = range,
-        default = default,
+        default = default, valueText = valueText,
         onValueChange = onChange, onBegin = {}, onEnd = {},
     )
 }

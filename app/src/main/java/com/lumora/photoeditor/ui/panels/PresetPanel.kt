@@ -54,6 +54,7 @@ import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
 import com.lumora.photoeditor.ui.theme.LumoraIcons
 import kotlinx.coroutines.*
+import kotlin.math.roundToInt
 
 /**
  * Preset browser with real GPU-rendered thumbnails (each preset is rendered
@@ -383,6 +384,10 @@ fun PresetPanel(
                 value = strength,
                 valueRange = 0f..1f,
                 default = 1f, // presets always apply at full strength on select
+                // Absolute quantity, not a push-from-default adjustment: without
+                // this the pill reads "−50%" at half strength (same wart the
+                // look-transfer Strength slider already avoids via valueText).
+                valueText = "${(strength * 100).roundToInt()}%",
                 onValueChange = { strength = it },
                 onBegin = {},
                 onEnd = {
