@@ -7,6 +7,7 @@ import androidx.exifinterface.media.ExifInterface
 import com.lumora.photoeditor.engine.NativeLib
 import com.lumora.photoeditor.engine.RawDecoder
 import com.lumora.photoeditor.engine.parseRawExif
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -154,7 +155,15 @@ suspend fun loadPhotoDetails(context: Context, img: LibraryImage): PhotoDetails 
                     } catch (_: Exception) { /* EXIF stays unknown */ }
                 }
             }
-        } catch (_: Exception) { /* never throw from the details loader */ }
+        } catch (t: Throwable) {
+            // Throwable, not just Exception: the loader's contract is "never
+            // throws", so an Error (e.g. OOM inside ExifInterface or the
+            // native RAW bridge) must also degrade to unknown fields below
+            // instead of failing the Details dialog. Cancellation is still
+            // rethrown — this runs on Dispatchers.IO under withContext.
+            if (t is CancellationException) throw t
+            /* never throw from the details loader */
+        }
         PhotoDetails(
             displayName = img.displayName,
             folder = img.folder,

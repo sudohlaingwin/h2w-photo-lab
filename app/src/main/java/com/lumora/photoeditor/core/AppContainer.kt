@@ -123,8 +123,11 @@ class AppContainer(val context: Context) {
                     }
                 } catch (e: OutOfMemoryError) {
                     android.util.Log.w("AiMaskStore", "save OOM for $key")
-                } catch (e: Exception) {
-                    android.util.Log.w("AiMaskStore", "save failed for $key", e)
+                } catch (t: Throwable) {
+                    // Throwable after the OOM catch: any other Error must also
+                    // degrade to a log, never take the app down (see comment
+                    // above the try).
+                    android.util.Log.w("AiMaskStore", "save failed for $key", t)
                 }
             }
 
@@ -139,8 +142,10 @@ class AppContainer(val context: Context) {
                 } catch (e: OutOfMemoryError) {
                     android.util.Log.w("AiMaskStore", "load OOM for $key")
                     null
-                } catch (e: Exception) {
-                    android.util.Log.w("AiMaskStore", "load failed for $key", e)
+                } catch (t: Throwable) {
+                    // Throwable after the OOM catch: any other Error degrades
+                    // to "no cached mask" instead of crashing the editor.
+                    android.util.Log.w("AiMaskStore", "load failed for $key", t)
                     null
                 }
             }
