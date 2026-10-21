@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.dp
 import com.lumora.photoeditor.engine.DetailParams
 import com.lumora.photoeditor.ui.state.EditorViewModel
 import com.lumora.photoeditor.ui.theme.Lumora
+import kotlin.math.roundToInt
 
 @Composable
 fun DetailPanel(vm: EditorViewModel) {
@@ -59,10 +60,12 @@ fun DetailPanel(vm: EditorViewModel) {
             ParamSlider(vm, "Amount", d.sharpening, 0f..150f, "Sharpening") { s, v ->
                 s.copy(detail = s.detail.copy(sharpening = v))
             }
-            ParamSlider(vm, "Radius", d.radius, 0.5f..3f, "Sharpen radius", default = 1f) { s, v ->
+            ParamSlider(vm, "Radius", d.radius, 0.5f..3f, "Sharpen radius", default = 1f,
+                valueText = "${(d.radius * 10).roundToInt() / 10f}") { s, v ->
                 s.copy(detail = s.detail.copy(radius = v))
             }
-            ParamSlider(vm, "Detail", d.detail, 0f..100f, "Sharpen detail", default = 25f) { s, v ->
+            ParamSlider(vm, "Detail", d.detail, 0f..100f, "Sharpen detail", default = 25f,
+                valueText = "${d.detail.roundToInt()}%") { s, v ->
                 s.copy(detail = s.detail.copy(detail = v))
             }
             ParamSlider(vm, "Masking", d.masking, 0f..100f, "Sharpen masking") { s, v ->
@@ -74,14 +77,15 @@ fun DetailPanel(vm: EditorViewModel) {
                 s.copy(detail = s.detail.copy(luminanceNr = v))
             }
             ParamSlider(vm, "Luminance detail", d.luminanceDetail, 0f..100f, "Luminance detail",
-                default = 50f) { s, v ->
+                default = 50f, valueText = "${d.luminanceDetail.roundToInt()}%") { s, v ->
                 s.copy(detail = s.detail.copy(luminanceDetail = v))
             }
-            ParamSlider(vm, "Color", d.colorNr, 0f..100f, "Color NR", default = 25f) { s, v ->
+            ParamSlider(vm, "Color", d.colorNr, 0f..100f, "Color NR", default = 25f,
+                valueText = "${d.colorNr.roundToInt()}%") { s, v ->
                 s.copy(detail = s.detail.copy(colorNr = v))
             }
             ParamSlider(vm, "Color detail", d.colorDetail, 0f..100f, "Color NR detail",
-                default = 50f) { s, v ->
+                default = 50f, valueText = "${d.colorDetail.roundToInt()}%") { s, v ->
                 s.copy(detail = s.detail.copy(colorDetail = v))
             }
         }
@@ -95,7 +99,7 @@ fun DetailPanel(vm: EditorViewModel) {
                 s.copy(detail = s.detail.copy(deconv = v))
             }
             ParamSlider(vm, "Radius", d.deconvRadius, 0.5f..1.5f, "Deconvolution radius",
-                default = 1f) { s, v ->
+                default = 1f, valueText = "${(d.deconvRadius * 10).roundToInt() / 10f}") { s, v ->
                 s.copy(detail = s.detail.copy(deconvRadius = v))
             }
             Text(
