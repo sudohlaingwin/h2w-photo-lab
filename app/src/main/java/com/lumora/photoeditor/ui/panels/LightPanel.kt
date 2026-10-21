@@ -390,7 +390,15 @@ fun LightPanel(
                 1 -> l.redCurve; 2 -> l.greenCurve; 3 -> l.blueCurve
                 else -> l.toneCurve
             }
-            val channelName = channels.first { it.second == curveChannel }.first
+            // firstOrNull, not first: this runs during composition, where a
+            // throw has no catch and crashes the editor. It matches the
+            // `when (curveChannel) ... else -> toneCurve` fallback directly
+            // above, which already treats any out-of-range channel as
+            // Master — the name must do the same instead of throwing.
+            // Today only 0..3 can arrive (remember + SegmentedControl),
+            // so this changes nothing on the current paths.
+            val channelName =
+                channels.firstOrNull { it.second == curveChannel }?.first ?: "Master"
             // One reset path for the visual preset chips AND the TalkBack
             // "Reset curve to linear" accessibility action (TalkBack
             // gestures never reach double-tap).
