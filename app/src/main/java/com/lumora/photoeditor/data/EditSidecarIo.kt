@@ -40,14 +40,20 @@ internal class EditSidecarIo(
     /**
      * Missing sidecar -> fresh [EditState]. Corrupt sidecar -> the bytes are
      * quarantined to "<id>.json.corrupt" for diagnosis and a fresh [EditState]
-     * is returned, so the original image is never at risk.
+     * is returned, so the original image is never at risk. This covers decode
+     * Errors too, not just Exceptions: an OOM on a huge sidecar or a
+     * StackOverflowError on deeply nested JSON must quarantine-and-start-fresh
+     * like any other corrupt sidecar, not escape the editor-open path
+     * (EditStore.load has no catch of its own) and fail opening the photo.
+     * Plain blocking read/decode — no suspension point inside, so no
+     * cancellation to rethrow (same rule as saveRaw below).
      */
     fun load(imageId: String): EditState {
         val f = sidecarFile(imageId)
         if (!f.exists()) return EditState()
         return try {
             decode(f.readText())
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             // Corrupt sidecar: keep the original image safe, start fresh.
             // The corrupt file is preserved for diagnosis.
             f.renameTo(corruptFile(imageId))
