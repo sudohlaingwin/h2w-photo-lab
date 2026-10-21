@@ -143,8 +143,13 @@ fun GradeWheelControl(
             }
         }
         Spacer(Modifier.height(2.dp))
+        // User law (2026-10-17): every adjustment value reads as a percentage.
+        // The wheel was the one visible readout missing the % sign ("120° · 45"
+        // reads as two bare numbers), and it showed raw hueDeg while TalkBack
+        // announces the normalized hue — a preset/sidecar hue outside 0..360
+        // would have shown e.g. "370°". hueNorm is already computed above.
         androidx.compose.material3.Text(
-            text = if (wheel.sat < 1f) "—" else "${wheel.hueDeg.roundToInt()}° · ${wheel.sat.roundToInt()}",
+            text = if (wheel.sat < 1f) "—" else "${hueNorm.roundToInt()}° · ${wheel.sat.roundToInt()}%",
             style = type.controlValue,
             color = if (wheel.sat < 1f) colors.textTertiary else colors.textPrimary,
         )
