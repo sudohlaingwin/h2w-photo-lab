@@ -2987,7 +2987,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
             small.compress(Bitmap.CompressFormat.JPEG, 80, out)
             if (small != bmp) small.recycle()
             Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            // Allocates a scaled bitmap + JPEG + base64 buffers: an
+            // OutOfMemoryError must degrade to null (the caller clears the
+            // loading state and shows "Could not load image") instead of
+            // escaping to scopeGuard, which only warn-logs and would leave
+            // the AI assistant stuck on its loading spinner forever.
+            if (t is CancellationException) throw t
             null
         }
     }

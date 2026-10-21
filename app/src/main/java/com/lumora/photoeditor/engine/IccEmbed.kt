@@ -62,7 +62,10 @@ object IccEmbed {
             seg.copyInto(out, 2)                 // APP2/ICC
             jpeg.copyInto(out, 2 + seg.size, 2)  // rest
             return out
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // Totality includes allocation failures: an OutOfMemoryError
+            // building the tagged copy must still return the input
+            // unchanged (export proceeds untagged) rather than fail it.
             return jpeg
         }
     }
@@ -117,7 +120,9 @@ object IccEmbed {
             chunk.copyInto(out, ihdrEnd)
             png.copyInto(out, ihdrEnd + chunk.size, ihdrEnd)
             return out
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // Same totality as embedJpeg: allocation failure returns the
+            // input unchanged so the export proceeds untagged.
             return png
         }
     }
