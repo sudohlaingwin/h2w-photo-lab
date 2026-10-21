@@ -48,7 +48,7 @@ internal object PresetBackupDoc {
                 put("version", VERSION)
                 put("presets", arr)
             }.toString()
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             null
         }
     }
@@ -68,7 +68,7 @@ internal object PresetBackupDoc {
                 else -> return emptyList()
             }
             arr.mapNotNull { (it as? JsonObject)?.toString() }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             emptyList()
         }
     }

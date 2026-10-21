@@ -3,6 +3,7 @@ package com.lumora.photoeditor.data
 import android.content.Context
 import com.lumora.photoeditor.engine.Preset
 import com.lumora.photoeditor.engine.sanitizeExportName
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +27,10 @@ class PresetRepository(private val context: Context) {
     suspend fun refresh() = withContext(Dispatchers.IO) {
         _custom.value = dir.listFiles { f -> f.extension == "json" }
             ?.mapNotNull { f ->
-                try { json.decodeFromString<Preset>(f.readText()) } catch (_: Exception) { null }
+                try { json.decodeFromString<Preset>(f.readText()) } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    null
+                }
             }.orEmpty().sortedBy { it.name }
     }
 
@@ -46,8 +50,10 @@ class PresetRepository(private val context: Context) {
     suspend fun renameCustom(id: String, newName: String) = withContext(Dispatchers.IO) {
         val clean = newName.trim().ifEmpty { return@withContext }
         val f = File(dir, "$id.json")
-        val cur = try { json.decodeFromString<Preset>(f.readText()) } catch (_: Exception) { null }
-            ?: return@withContext
+        val cur = try { json.decodeFromString<Preset>(f.readText()) } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            null
+        } ?: return@withContext
         if (cur.builtIn) return@withContext
         f.writeText(json.encodeToString(cur.copy(name = clean)))
         refresh()
@@ -66,7 +72,10 @@ class PresetRepository(private val context: Context) {
     suspend fun importPreset(fileContent: String): Preset? = withContext(Dispatchers.IO) {
         val decoded = try {
             json.decodeFromString<Preset>(fileContent)
-        } catch (_: Exception) { null }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            null
+        }
         val prepared = prepareImportedPreset(decoded, _custom.value.map { it.name }.toSet())
             ?: return@withContext null
         saveCustom(prepared)
@@ -93,7 +102,10 @@ class PresetRepository(private val context: Context) {
         val docs = _custom.value.mapNotNull { p ->
             try {
                 File(dir, "${p.id}.json").readText().takeIf { it.isNotBlank() }
-            } catch (_: Exception) { null }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                null
+            }
         }
         PresetBackupDoc.wrap(docs)
     }
@@ -131,6 +143,9 @@ class PresetRepository(private val context: Context) {
             val f = File(shareDir, "$stem.json")
             f.writeText(json.encodeToString(preset))
             f
-        } catch (_: Exception) { null }
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            null
+        }
     }
 }
