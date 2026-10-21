@@ -1628,6 +1628,11 @@ private fun EditorToolbar(
                     1 to "Shadows", 2 to "Highlights").forEach { (mode, label) ->
                     LumoraDropdownMenuItem(
                         text = label,
+                        textColor = if (mode == clipMode) colors.accent
+                            else colors.textPrimary,
+                        icon = if (mode == clipMode) Icons.Default.Check else null,
+                        iconTint = colors.accent,
+                        stateDescription = if (mode == clipMode) "Selected" else null,
                         onClick = { onClip(mode); clipMenu = false },
                     )
                 }
@@ -1697,6 +1702,9 @@ private fun EditorToolbar(
                 // the label's stateDescription so TalkBack announces it.
                 LumoraDropdownMenuItem(
                     text = "Show grid",
+                    textColor = if (showGrid) colors.accent else colors.textPrimary,
+                    icon = if (showGrid) Icons.Default.Check else null,
+                    iconTint = colors.accent,
                     stateDescription = if (showGrid) "On" else "Off",
                     onClick = { onToggleGrid(); overflowMenu = false },
                 )
