@@ -86,6 +86,27 @@ fun PresetPanel(
     // Snapshot of edit state BEFORE the selected preset was applied.
     // Strength changes always re-blend from this base to avoid compounding.
     var baseState by remember { mutableStateOf<EditState?>(null) }
+    // The edit state this panel last produced (preset apply or strength
+    // change). A preset selection is only valid while the state still
+    // matches it: toolbar Undo/Redo and the overflow menu (Paste edits,
+    // History restore, Reset all) can change the state while this panel
+    // stays open, and re-blending from the stale baseState would then
+    // silently discard that edit (e.g. a pasted edit wiped by a strength
+    // drag); the card highlight would lie for the same reason. Any
+    // divergence therefore clears the selection — the user can simply tap
+    // the preset again for a fresh apply. Read AFTER endGesture() so
+    // geometry constrain adjustments are included in the snapshot.
+    var lastPresetState by remember { mutableStateOf<EditState?>(null) }
+    val currentState by vm.state.collectAsState()
+    LaunchedEffect(currentState) {
+        if (selectedId != null && lastPresetState != null &&
+            currentState != lastPresetState
+        ) {
+            selectedId = null
+            baseState = null
+            lastPresetState = null
+        }
+    }
     var thumbs by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     // Which photo the thumbnails were rendered for. Thumbnails must be
     // regenerated when the user opens a different photo: without this the old
@@ -370,6 +391,7 @@ fun PresetPanel(
                     vm.beginGesture()
                     vm.update(gesture = true) { Presets.apply(base, p, strength) }
                     vm.endGesture("Preset ${p.name}")
+                    lastPresetState = vm.state.value
                 },
                 modifier = Modifier.padding(horizontal = 0.dp),
             )
@@ -411,6 +433,7 @@ fun PresetPanel(
                         if (selectedId == p.id) {
                             selectedId = null
                             baseState = null
+                            lastPresetState = null
                         } else {
                             selectedId = p.id
                             strength = 1f
@@ -418,6 +441,7 @@ fun PresetPanel(
                             vm.beginGesture()
                             vm.update(gesture = true) { s -> Presets.apply(s, p, 1f) }
                             vm.endGesture("Preset ${p.name}")
+                            lastPresetState = vm.state.value
                         }
                     },
                 )
