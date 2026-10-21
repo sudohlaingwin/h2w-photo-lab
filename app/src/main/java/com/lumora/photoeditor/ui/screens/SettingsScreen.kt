@@ -439,9 +439,9 @@ private fun AiKeySettings(container: AppContainer) {
                         } ?: throw IllegalStateException("Could not open file")
                         "Key backed up — keep the file private."
                     }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    "Backup failed: ${e.message?.take(80)}"
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    "Backup failed: ${t.message?.take(80)}"
                 }
             }
         }
@@ -464,9 +464,9 @@ private fun AiKeySettings(container: AppContainer) {
                         keyStore.setGeminiKey(key)
                         "Key restored — tap Test Connection to verify." to key
                     }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    "Restore failed: ${e.message?.take(80)}" to null
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    "Restore failed: ${t.message?.take(80)}" to null
                 }
             }
             if (restoredKey != null) {
