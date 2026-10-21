@@ -86,7 +86,13 @@ internal class EditSidecarIo(
     fun saveRaw(imageId: String, raw: String): Boolean {
         try {
             decode(raw)
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // Any decode failure — including an Error from a hostile remote
+            // payload (e.g. OOM on a huge payload, StackOverflowError on
+            // deeply nested JSON) — rejects the payload instead of escaping
+            // applyPhotoEntry's "Never throws" contract and clobbering or
+            // crashing the sync-apply path. The local sidecar is untouched.
+            // Plain decode: no cancellation to rethrow (cf. cycle 6aee0f4).
             return false
         }
         return runCatching {
