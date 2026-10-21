@@ -1048,9 +1048,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         guardLaunch {
             val ok = try {
                 container.snapshots.take(id, name, state) != null
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e // don't swallow coroutine cancellation
-                android.util.Log.w("EditorViewModel", "takeSnapshot failed", e)
+            } catch (t: Throwable) {
+                // Throwable, not just Exception: an Error (e.g. OOM) during
+                // the save must still report onDone(false) below instead of
+                // leaving the snapshot UI waiting forever. Cancellation is
+                // still rethrown; matches duplicateCurrent/runGpuSelfTest.
+                if (t is CancellationException) throw t
+                android.util.Log.w("EditorViewModel", "takeSnapshot failed", t)
                 false
             }
             onDone(ok)
@@ -2936,9 +2940,12 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                             msg = com.lumora.photoeditor.ai.friendlyGeminiHttpError(code)
                             break
                         }
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e // don't swallow coroutine cancellation
-                        msg = "Network error: ${e.message?.take(100)}"
+                    } catch (t: Throwable) {
+                        // Throwable, not just Exception: an Error on one
+                        // model attempt must fall through to the next model,
+                        // not abort discovery (the outer catch reports).
+                        if (t is CancellationException) throw t
+                        msg = "Network error: ${t.message?.take(100)}"
                     }
                 }
                 withContext(Dispatchers.Main) {
@@ -2947,10 +2954,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                         com.lumora.photoeditor.ai.friendlyNoGeminiModelFound()
                     })
                 }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e // don't swallow coroutine cancellation
+            } catch (t: Throwable) {
+                // Throwable, not just Exception: an Error during discovery
+                // must still fire onResult(false) instead of leaving the
+                // "Testing…" spinner stuck (scopeGuard would only log it).
+                if (t is CancellationException) throw t
                 withContext(Dispatchers.Main) {
-                    onResult(false, "Network error: ${e.message?.take(100)}")
+                    onResult(false, "Network error: ${t.message?.take(100)}")
                 }
             }
         }
