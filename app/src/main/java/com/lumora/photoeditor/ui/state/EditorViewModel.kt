@@ -1202,7 +1202,9 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * Guided perspective: solves the vertical-perspective amount that makes
      * the user-drawn source-UV line read vertical on screen (undoable, one
      * history entry). Returns false — keeping the guide active for another
-     * try — when the line is degenerate or unusable; nothing is changed.
+     * try — when the line is degenerate or unusable, or when the solver
+     * itself fails (an Error is logged and reported as a failed guide,
+     * never a crash); nothing is changed.
      * Deterministic pixel math, no machine learning.
      */
     fun applyPerspectiveGuide(p1: Pt, p2: Pt): Boolean {
@@ -1211,7 +1213,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         val vw = viewW.coerceAtLeast(1); val vh = viewH.coerceAtLeast(1)
         val sol = try {
             Geometry.solvePerspectiveV(p1, p2, vw, vh, bmp.width, bmp.height, s.crop, s.geometry)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             if (e is CancellationException) throw e // don't swallow coroutine cancellation
             android.util.Log.e("EditorViewModel", "applyPerspectiveGuide failed", e)
             return false
@@ -1227,8 +1229,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * Guided horizontal perspective: solves the horizontal-perspective amount
      * that makes the user-drawn source-UV line read horizontal on screen
      * (undoable, one history entry). Returns false — keeping the guide active
-     * for another try — when the line is degenerate or unusable; nothing is
-     * changed. Deterministic pixel math, no machine learning.
+     * for another try — when the line is degenerate or unusable, or when the
+     * solver itself fails (an Error is logged and reported as a failed
+     * guide, never a crash); nothing is changed. Deterministic pixel math,
+     * no machine learning.
      */
     fun applyPerspectiveGuideH(p1: Pt, p2: Pt): Boolean {
         val bmp = _preview.value ?: return false
@@ -1236,7 +1240,7 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         val vw = viewW.coerceAtLeast(1); val vh = viewH.coerceAtLeast(1)
         val sol = try {
             Geometry.solvePerspectiveH(p1, p2, vw, vh, bmp.width, bmp.height, s.crop, s.geometry)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             if (e is CancellationException) throw e // don't swallow coroutine cancellation
             android.util.Log.e("EditorViewModel", "applyPerspectiveGuideH failed", e)
             return false
