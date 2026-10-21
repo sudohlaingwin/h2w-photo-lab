@@ -285,13 +285,25 @@ fun PresetPanel(
                             // render preset over a neutral base (current image, preset state)
                             val bmp = engine.renderThumbnail(p.state, small)
                             done.complete(bmp)
-                        } catch (e: Exception) {
-                            done.completeExceptionally(e)
+                        } catch (t: Throwable) {
+                            // Same family as cycles 33/14:32/14:42: renderThumbnail
+                            // allocates bitmaps, so an OutOfMemoryError here must
+                            // complete the deferred (→ Retry UI below), never
+                            // escape queueEvent on the GL thread uncaught.
+                            if (t is CancellationException) throw t
+                            done.completeExceptionally(t)
                         }
                     }
                     val bmp = try {
                         withTimeoutOrNull(THUMB_TIMEOUT_MS) { done.await() }
-                    } catch (_: Exception) { null }
+                    } catch (t: Throwable) {
+                        // A completed-exceptionally Error (e.g. OOM from the
+                        // GL task above) rethrows from await() as a Throwable,
+                        // not an Exception — catching only Exception here let
+                        // it kill this LaunchedEffect instead of showing Retry.
+                        if (t is CancellationException) throw t
+                        null
+                    }
                     if (bmp == null) {
                         // A GL task never answered (or failed): don't leave
                         // every card spinning forever — bail out honestly and
