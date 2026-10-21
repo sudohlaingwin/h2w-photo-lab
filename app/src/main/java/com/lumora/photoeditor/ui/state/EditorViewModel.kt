@@ -951,12 +951,18 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
      * Image-specific work (retouch spots, AI-derived masks) is dropped by
      * [EditState.sanitizedForPaste]. Undoable, one history entry.
      * @return false when the clipboard is empty or the payload is corrupt.
+     * A Throwable (not just Exception) during decode is also a plain false:
+     * an Error — e.g. OOM on a corrupt/oversized payload — on this tap must
+     * not crash the editor; the library-side paste path already catches
+     * Throwable, and this matches it. No coroutine runs here, so there is
+     * no cancellation to rethrow.
      */
     fun pasteEdits(): Boolean {
         val raw = container.copiedEdits.value ?: return false
         val pasted = try {
             container.editStore.decode(raw).sanitizedForPaste()
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            android.util.Log.w("EditorViewModel", "pasteEdits decode failed", t)
             return false
         }
         update("Paste edits") { pasted }
@@ -994,12 +1000,17 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /**
      * Restores a previous edit step from history. Undoable via
      * update("Restore: ..."), and the restore itself is recorded as a new
-     * history step so nothing is silently lost.
+     * history step so nothing is silently lost. A Throwable (not just
+     * Exception) during decode is a plain false — an Error on this tap
+     * must leave the history dialog open for another try instead of
+     * crashing the editor; same contract as [pasteEdits] above, and no
+     * coroutine runs here so there is no cancellation to rethrow.
      */
     fun restoreHistory(entry: HistoryEntry): Boolean {
         val state = try {
             container.editStore.decode(entry.stateJson)
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            android.util.Log.w("EditorViewModel", "restoreHistory decode failed", t)
             return false
         }
         update("Restore: ${entry.label}") { state }
