@@ -525,9 +525,14 @@ class ExportManager(private val context: Context) {
         // pending entry on an exception, so a null stream left a zero-byte
         // gallery item behind and the export claimed success. Bail out the
         // same way for both: delete the entry, fail cleanly.
+        // Throwable, not just Exception: an Error (e.g. OOM, or a provider-side
+        // Error) during open or copy must still delete the IS_PENDING entry
+        // instead of escaping and leaving an orphaned pending gallery item
+        // behind while the export crashes. Cancellation is still rethrown.
         val out = try {
             resolver.openOutputStream(uri)
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             null
         }
         if (out == null) {
@@ -544,7 +549,8 @@ class ExportManager(private val context: Context) {
                 resolver.update(uri, values, null, null)
             }
             return uri
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             resolver.delete(uri, null, null)
             return null
         }
