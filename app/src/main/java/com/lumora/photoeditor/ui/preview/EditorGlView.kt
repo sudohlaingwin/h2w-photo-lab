@@ -1408,8 +1408,18 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                 val n = (pw * ph).toFloat()
                 val r = sr / n / 255f; val g = sg / n / 255f; val b = sb / n / 255f
                 post { if (isValid()) onSample(r, g, b) }
-            } catch (e: Exception) {
-                android.util.Log.e("EditorGlView", "WB pick readback failed", e)
+            } catch (t: Throwable) {
+                // Crash (2026-10-21): this block runs on the GLSurfaceView
+                // render thread via queueEvent, and it was the last
+                // Exception-only catch in this file (every sibling
+                // queueEvent block already catches Throwable). An Error
+                // here (e.g. OOM on the readback buffer under memory
+                // pressure) previously escaped as an uncaught render-thread
+                // exception, killing the renderer and leaving a frozen
+                // preview — the same symptom class as the black-preview P0.
+                // The pick just fails quietly now; the renderer survives
+                // and the user can tap again.
+                android.util.Log.e("EditorGlView", "WB pick readback failed", t)
             }
         }
     }
