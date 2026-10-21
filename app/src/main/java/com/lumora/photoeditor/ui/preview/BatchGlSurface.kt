@@ -78,7 +78,7 @@ private class BatchGlView(context: Context) : GLSurfaceView(context) {
             override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
                 try {
                     engine.init()
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     android.util.Log.e("BatchGlView", "GL init failed", e)
                     post { onGlError?.invoke(e.message ?: "3D renderer failed to start") }
                     return

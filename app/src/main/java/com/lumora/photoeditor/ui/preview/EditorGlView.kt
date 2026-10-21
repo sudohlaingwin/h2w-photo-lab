@@ -1863,7 +1863,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             try {
                 engine.init()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 setGlError(e.message ?: "GL initialization failed")
                 android.util.Log.e("EditorGlView", "GL init failed", e)
                 return
@@ -1887,7 +1887,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
                         engine.setSource(bmp)
                         lastSource = bmp
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     android.util.Log.e("EditorGlView", "setSource failed", e)
                 }
             }
@@ -1903,7 +1903,7 @@ private class GLView(context: Context) : GLSurfaceView(context) {
             if (glError != null) return
             try {
                 drawFrameInternal()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 android.util.Log.e("EditorGlView", "onDrawFrame failed", e)
                 setGlError(e.message ?: "Render failed")
             }
