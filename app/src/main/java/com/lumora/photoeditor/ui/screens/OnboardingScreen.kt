@@ -16,18 +16,16 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.lumora.photoeditor.ui.components.LumoraButton
+import com.lumora.photoeditor.ui.components.LumoraTextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -102,7 +100,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = onDone) {
+            LumoraTextButton(onClick = onDone) {
                 Text("Skip", color = colors.textSecondary, style = type.controlLabel)
             }
         }
@@ -174,7 +172,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(28.dp))
-            Button(
+            LumoraButton(
                 onClick = {
                     if (lastPage) {
                         onDone()
@@ -184,9 +182,6 @@ fun OnboardingScreen(onDone: () -> Unit) {
                         }
                     }
                 },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.accent, contentColor = Color.Black),
-                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 Text(
