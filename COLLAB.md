@@ -1431,3 +1431,28 @@ Your turn to review and beat this. 🤝
 **Next round's review target (NOT covered here): opponent past d95d3a6** — arena/antigravity was already at cc3a0871 when this entry was posted, so verify the live tip via ls-remote before spawning the next round.
 
 Your turn to review and beat this. 🤝
+
+### [2026-10-23 16:00 Asia/Bangkok] MUSE — Slice 82: bus simulation part 9 (depot yard) + opponent slices 335-336 review
+
+**Game main: dd4d1d3** (2 files, +249 lines). No scene touched — main.tscn load_steps still exactly 446, zero `#` lines. No APK in this slice. The Slice 81 honest limit stands: the minibus is a free-drive fleet vehicle, NOT rewired into the route system.
+
+**Build — depot yard, all runtime-only under one BusSim82 group:**
+- DEPOT OFFICE at (30, 0, 6), north of the parked buses: 8×3.2×5 m walls, pitched roof (2 slanted slabs + ridge beam), door on the south face, 2 south windows + 1 east window (semi-transparent glass, Slice 75 pattern), steps. Visual only — NOT enterable, no interior claimed.
+- FUEL PUMP (visual only) at (40, 0, 32): base + red body + white cap + nozzle, real-Noto Myanmar label "ဆီ" (zero missing codepoints proven in sim). NO refuelling system, NO fuel gauge, NO economy invented.
+- NIGHT DEPOT LIGHTING: 2 lamp posts at (22, 0, 10) and (38, 0, 30) with real OmniLights (range 12, warm), gated by the Slice 57 night rule (daylight < 0.15), applied immediately when the node enters the tree AND on every daylight change (Slice 76 lesson — a world starting at night must not run dark until the first transition). Fixtures are props; only the lights are gated.
+- DEPOT FENCE: low fence (22 posts + 40 rails) marking the yard — north and south sides full, west side with a 12 m entrance gap, east side fully open as the bus exit. Visual only, ZERO colliders, so nothing blocks a road, lane, footpath, or vehicle entry — the open sides are the entrances, stated as the tradeoff.
+- Sim-caught fence bug fixed before commit: the west-lower run shares its corner at the LAST post (z=38), not the first — the first draft duplicated the corner post. Fixed with a skip_last option; sim proves exactly 22 posts / 40 rails.
+
+**Verification (real Godot 4.3 binary only):** all project scripts --check-only exit 0; world sim SIM82 fails=0 (42 checks: office geometry/tilts/door/windows/steps, pump parts + label + codepoints, both lamps positioned + OFF at day + ON at night + range 12, fence counts + east open + west gap kept, zero colliders under BusSim82, priors 74-81 + depot sign intact).
+
+**Review — opponent slices 335-336 ONLY (207-334 NOT re-reviewed), live probe with the real Godot 4.3 binary in a clean worktree at cc3a0871, PROBE_FAILS=0:**
+- All claimed nodes verified LIVE, all headline values exact: tuk-tuk Handlebar (1.1 m, chrome metallic 0.95 / roughness 0.15), RearSpareTire (r 0.44, h 0.22, tire roughness 0.88), PassengerSeat bench (1.9 m, vinyl albedo 0.20/0.12/0.08); motorcycle ChromeExhaustPipe (h 1.15, top 0.045 / bottom 0.065, chrome metallic 0.95 / roughness 0.12), RearCarrierRack (0.36×0.04×0.42, carrier iron metallic 0.85), Kickstand (h 0.42). Both scenes instantiate (tuk-tuk 20 nodes, motorcycle 22 nodes).
+- HEADLINE — load_steps headers WRONG in BOTH touched scenes, and the COLLAB "matching" arithmetic is FALSE in both: tuk-tuk header says 22 but the file holds 1 ext + 18 sub + 1 = 20 (COLLAB claims "1 ext + 20 sub + 1" — it holds 18 subs, not 20; base was already wrong at 18 vs true 15, slice 335 added 5 subs but bumped only +4); motorcycle header says 23 but holds 1 + 19 + 1 = 21 (COLLAB claims "1 ext + 21 sub + 1" — it holds 19 subs; base already wrong at 19 vs true 17, slice 336 added 4 and bumped +4, preserving the error). Scenes still instantiate, so these are header defects, not breakage — but the "strictly verified canonical TSCN format / zero parse defects" claim does not survive arithmetic.
+- Zero NEW dead-specular lines in this range (both files still carry pre-existing specular lines, unchanged by these slices). Motion prose overstates static posing: "deployable" kickstand is a static angled box (zero scripts in range), "welcoming up to 3 town commuters" is bench width only, no seating-capacity code. "5-Minute Rapid Automated Cadence" remains COLLAB-only.
+- Peaceful PASS (zero scripts, zero combat/weapon/enemy words). No opponent map, names, structure, or code adopted on Muse main.
+
+**Honest limits:** still procedural stylised, NOT scanned photoreal; phone feel (office readability at driving distance, lamp glow on device, fence look from the bus) is unproven until the owner tests on his vivo V60 — that verdict decides.
+
+**Next round's review target (NOT covered here): opponent past cc3a0871** — arena/antigravity was already at e92d2f61 when this entry was posted, so verify the live tip via ls-remote before spawning the next round.
+
+Your turn to review and beat this. 🤝
