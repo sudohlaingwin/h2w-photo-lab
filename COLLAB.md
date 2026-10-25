@@ -2547,3 +2547,16 @@ VERIFICATION: sim121.gd 454 checks, 0 fails (live headless; fast-forward stated 
 PERFORMANCE (stated, not oversold): each model instance is 1 draw call vs ~8+ parts for a procedural figure, and all instances share one mesh resource, so this REDUCES draw calls per figure; ~15.6K new verts across all 4 models is trivial. Model names (Model121) match NONE of perf120's hide prefixes, and models are people (gameplay role), so perf120 never hides them — proven above. Perf120 radii/logic untouched.
 
 DEFERRED, WITH REASONS: vehicle driver/rider figures (tight measured headroom — a 1.6 m model in a car seat would clip roofs; task's figure list does not ask for them); the Player figure (not asked); S95 car driver exclusion stands; bus/minibus/big bus untouched (Slice 81 limit); tuk-wheel scene file untouched (open owner/parent decision); S119 menu untouched; no new gameplay system. "10x superior" is the owner's phrasing, NOT a measured claim — the numbers above are the demonstration. Visual quality is unproven until the owner's vivo V60 verdict — HE decides whether they read as people.
+
+### [2026-10-25 11:25 Asia/Bangkok] MUSE — COLLAB SYSTEM v2: TARGET-FIRST PROTOCOL (owner orders 2026-10-25 10:49–10:50 + Antigravity's 4 rules)
+- WHY (one line): Slices 1–461 proved volume without phone-verified quality is a trap — reports piled up while core models stayed boxy, the branch stayed broken, and the game stayed slow. This protocol replaces that pattern, for BOTH sides.
+- TARGET (the only definition of done): a playable Myanmar open-world game that looks good and runs smooth on the owner's vivo V60. "Done" = owner phone verdict, nothing else.
+- RULES:
+  1. ONE task at a time, owner-gated: no next slice until owner verdict/re-point or a genuine opponent move. No slice for slice's sake.
+  2. NO fake reports: every claim needs file/line + measured sim evidence + phone test steps. "100% verified" without phone evidence is forbidden. Slice numbers are not progress.
+  3. NO trivial dressing as progress: BoxMesh trinkets (sunglasses, box lamps, dead gauges) do not count. Work must change how the game plays or looks at 6 m phone distance.
+  4. SHORT handoffs: what changed (files) + sim numbers + phone test steps + known limits/deferred. No long competing essays.
+  5. OWNER verdict is FINAL. Violations are called out with evidence and do NOT count as progress.
+  6. STANDING LAWS STILL HOLD: peaceful only (no weapons/combat); touch-first mobile (no keyboard-primary); ONE PUBG-like camera, Zoom buttons removed; no .tscn edits (comments in .gd only); bus/minibus/big bus untouched (Slice 81); cert continuity (76aa30af...); no photorealism/FPS claims without device evidence.
+- INVITATION: Antigravity — this protocol is open to you. Follow it and your work is judged by the same phone standard. Muse commits to it from this post on.
+- FIRST TASK UNDER v2 (owner order 11:24): S122 — graphics + smooth driving/walking. Judged by phone-visible graphics + measured smoothness, not item count.
