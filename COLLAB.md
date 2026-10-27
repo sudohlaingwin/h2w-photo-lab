@@ -3341,3 +3341,49 @@ RELEASE NOTICE (78d39a7) — docs-only commit; its own target SHA cited is 96a48
 WHAT TO FIX FIRST (in order): (1) strip BOMs from all 12 .tscn files — this alone restores the car, the HUD, and the Mindon builder's preload; (2) fix the mobile_touch_hud leading-dot (lines 26–27); (3) dedupe audio_manager.gd; (4) fix vehicle_controller.gd indent (289–290); (5) replace the watermill constant with a real Godot 4.3 attenuation member. Then, for Mindon: build all 13 buildings (not hospital-only), rotate footprints to polygons, put real house positions (not slots), source the landmarks from data (not round numbers), and give the river a blend mode. Until (1)–(5) land, no new feature in this tree can be counted.
 
 APK (built from 78d39a7 with their export config, preset "Android", arm64-v8a): apksigner VERIFIES, package com.h2w.gtaopenworld, versionCode 1, versionName 1.0.0, label "Myanmar GTA Open World - Mindon Edition", cert SHA-256 76aa30afb126068dad0d0b4bcdf60d7406670ff591dee16ffc12d30da52ffa5d (same Godot debug cert as Muse's builds — same package + same cert means installing theirs REPLACES the S148 install; going back needs reinstalling the S148 link). Size 25,771,213 B, md5 a5f7b00b5c8eb41ee64e2ffad949707d. Drive file id 1SM6Mt5OWeBNcM6kTbD0pe1FerTv45-xP, Drive md5 matches local (verified via fresh files get). APK contents: all 4 GLB imported .scn files present; world.tscn + world.gdc present; mindon_map_builder.gdc present (compiled but unloadable at runtime, per probe); myanmar_house.tscn, village_car.tscn, mobile_touch_hud.tscn present as raw text WITH BOMs (they will fail at runtime exactly as probed); traffic_car / myanmar_villager / main_menu exported .scn present. First-run probe bugs stated openly (probe bugs, not tree bugs): (1) first BOM scan used xxd (not installed) and proved nothing — redone with python3; (2) first export failed only because build/ did not exist (environment, not tree) — mkdir build fixed it.
+
+### [2026-10-27 13:08 Asia/Bangkok] MUSE — Slice 152: map expansion + immersion batch (game main 6014177)
+
+WHAT SHIPPED (game main 3b0aff6 -> 6014177, 7 files, +589/-13, zero .tscn edits):
+- Expansion EAST only (the 2026-10-22 pin-area read says town is densest east): playable bounds x 3050 -> 3850 (player clamp 3849.5, map_transform max_x, new ground plane 800x920 at (3450,-50), east border ring + skyline moved with bounds, counts identical).
+- East road, drivable: straight z=0, 2445 -> 3400 (79 dashes, S133 pattern) + dirt continuation 3400 -> 3800. Connects to the existing world; no isolated islands.
+- Houses +9: 6 east settlement (S102 pattern, own materials, night-gated window glows, solid colliders) + 3 Mindon-south infill at EXACT targets (170,140), (220,150), (150,180) via the S138 guard (all clear at offset (0,0), none skipped).
+- People +6: walkers Villager19-24 (npc system, homes + day anchors, 8 m wander, displacement proven like S132). World walkers 18 -> 24.
+- Traffic: MAX_SLOTS 10 -> 12 (slots 10/11 on the east loop, distinct orders 2/3) + 4 parked cars. Midday fleet 10 -> 12; 7/3 bands unchanged.
+- Trees +20 (roadside 12 + settlement 6 + track 4), fields +4, lamps +8 (road 4 + settlement 2 + infill 2, S124 pool pattern, 8 new omnis).
+- Mountains NEW: 29 backdrop cones (north 23 + east 6, heights 60-120 m, NO colliders, OUTSIDE the clamp) — horizon read changes, play physics cannot break. Terrain relief inside the playable area SKIPPED (would break placements), stated as such.
+
+MAP DATA (first, plainly blocked — no surveyed positions claimed):
+- OSM Overpass STILL blocked from this VM (overpass-api.de HTTP 406 in 1.19 s; kumi/private.coffee mirrors 30 s timeouts; Nominatim works — reverse geocode confirms pin area = Ward 3, Mindon, residential highway, lat 19.3515613 lon 94.7317941; block is Overpass-specific, NOT proof OSM lacks Mindon data).
+- Google Maps short link fetch FAILED (no extractable content; not retried).
+- Usable basis remains the 2026-10-22 pin-area read + Nominatim confirmation (dense small footprints around pin, irregular grid, E-W street south of pin, densest at pin + east/southeast, Maton watercourse west + north, Oo village west, fields all sides). Every S152 placement is labeled DATA-BACKED (real corridor/direction) vs PATTERN-FOLLOWING (existing cluster pattern) in realism152.gd; NOTHING is described as a surveyed Mindon house position. The owner's 11:32 complaint (second time) is not answered by pretending otherwise.
+
+GAME BUGS FOUND + FIXED (stated openly):
+- Holders gate used direct-child lookup but HamletHouse75_0 is NESTED (proven by probe) -> recursive _find_rec for all holders.
+- Villager19 first spawned inside a house solid (feet -0.45, sank) -> homes moved to front-of-house positions, clear of solids by >= 2.4 m.
+- S146 tint reads ONLY surface-override materials; realism152 helpers used material_override -> helpers now use set_surface_override_material(0,...) (S146 itself untouched).
+- Traffic slot-order duplication (10->0 dup slot 6, 11->1 dup slot 7) -> orders 2/3; mutual deadlock at (250,3) proven by probe.
+- Far-respawn self-loop: d>75 branch respawned Van11 to its OWN position every frame (speed reset to 0 forever) -> offset 0 in that branch only.
+- Arrival deadlock (Car6+Car10 at one waypoint) REMAINS by design: pre-existing omnidirectional-stop behavior with a designed 15 s stuck-timeout despawn+refill; S152's 4-car loop only makes it more frequent. A drive() stop-logic rewrite is a future traffic-system slice, not this one.
+
+SIM BUGS / GATE UPDATES (no gates widened, no vehicles retuned):
+- sim152 season full-cycle gate was wrong (cycle-3 keys != raw base because every season multiplier differs from identity) -> double-cycle gate (keys6 == keys3 exactly).
+- sim152 traffic gate redesigned (single 6 s window fails a car legitimately inside a 15 s jam) -> 20 s path gate (>= 5 m, respawn jumps excluded). Paths: car10 39.3 m, van11 76.9 m.
+- sim152 night baseline raced the 1.0 s fleet transition -> 1500 ms settle before baseline.
+- sim121/sim132/sim143 stale counts updated on principle (S148 precedent): villagers 18 -> 24, walkers 18 -> 24, walker variety 4/5/5/4 -> 5/6/7/6, Model121 total 36 -> 42, type counts 7/12/10/7 -> 9/13/12/8, Realism121 _walkers 18 -> 24. Gate shapes unchanged.
+- sim121 + sim143 check-timing fixes: new walkers are dressed by realism121's 1.0 s scan, not by _apply — both sims now wait for all figures to carry Model121 before auditing (800 ms alone is shorter than one scan interval). Timeout still audits + reports (no masking).
+- sim143 night audit found a REAL gap: Mindon-south residents had zero night light (V24 failed twice) -> 2 infill lamp pools, 5 m from V23/V24 homes, clear of house solids. sim143 now 286/0.
+- sim121 collider catch: _walker152 created colliders WITHOUT names -> Godot assigned @CollisionShape3D@125-130, so get_node_or_null("CollisionShape3D") missed them. One-line fix (explicit name); sim121 now 502/0.
+- Probe152g: Villager4 is NOT re-stuck (5.87 m / 30 s, max 6 s window 6.05 m) — its sim132 6 s-window fails caught a 15 s stand phase (pause=0, talk=0). Open NPC-behavior question, NOT an S152 regression (S152 obstacles are 100 m+ from V4's area; S151 sim132 was 40/0; S152 batch sim132 had no unstuck fail). No npc.gd behavior touched.
+
+VERIFICATION:
+- sim152 187/0 (three green runs incl. after lamp + collider changes). Day nodes 14628. Parse-by-load 127/127 (125 game scripts + 2 transient harness copies, since deleted). load_steps 446. Zero ZoomInButton/ZoomOutButton.
+- Priors: sim119_menu 96/0, sim120 1037/0, sim122 66/0, sim123 151/0, sim124 77/0, sim125 89/0, sim127 97/0, sim128 90/0, sim129 113/0, sim130 113/0, sim131 75/0, sim133 61/0, sim134 138/0, sim135 38/0, sim138 47/0, sim141 42/0, sim145 99/0, sim146 138/0, sim147 22/0, sim148 95/0, sim149 325/0, sim150 50/0, sim151 189/0; sim121 502/0, sim132 40/0, sim137 4/0, sim143 286/0 (all standalone after fixes).
+- sim126 flake table (known class, three runs, three identity sets, all wall-clock marginals): batch 209/4 (plane 0.884, Cow2 0.330, Bicycle 0.487, Cart 0.383), standalone 209/5 (Cow 0.489, Cow2 0.431, Bicycle 0.400, Cart 0.411, lag-pitch 0.153 vs 1.063), standalone 209/2 (Cow 0.457, Cow2 0.463). No gates widened, no vehicles retuned; phone is the real signal.
+
+DEFERRED (stated, not hidden): map exactness still NOT solved (no per-house/per-road coordinate data); terrain relief inside playable area skipped; fog + night water sheen still deferred per S130; S151 season-tint leak + Stilt17/18 pavilion notes untouched (owner verdict); S137 anchor/airplane decisions untouched (owner decisions); moon halo untouched (S127, owner verdict); east-loop arrival deadlock (designed 15 s cycle) is a future traffic-system candidate.
+
+PHONE TESTS (first APK containing BOTH S151 hamlet windows + S152 expansion; S148 does NOT contain either):
+- Day: drive east past x 3050 to the new settlement (houses, road, parked cars, walkers, fields, trees) and on to x 3840 (clamp holds at 3849.5, mountains on the horizon north + east); check Mindon-south infill houses at (170,140), (220,150), (150,180) + their residents; check hamlet houses 2/3 front windows (S151).
+- Night: east settlement lamps + infill lamps lit; Mindon-south residents visible near their homes; night otherwise exactly S127 + S131, day otherwise exactly S129.
+- Traffic: east loop carries 4 cars (may jam up to ~15 s at a shared waypoint, then clears by despawn+refill — that cycle is designed, not a freeze).
